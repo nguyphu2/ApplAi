@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Applai</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Applai</h1>
+    <div id="auth-status">
+      <button id="login-btn">Log in</button>
+      <button id="logout-btn" hidden>Log out</button>
+    </div>
+  </header>
+
+  <main>
+    <form id="match-form">
+      <label for="resume-file">Resume (PDF)</label>
+      <input type="file" id="resume-file" accept="application/pdf" />
+
+      <label for="skills-text">Skills / resume text</label>
+      <textarea id="skills-text" rows="6"></textarea>
+
+      <fieldset>
+        <legend>Filters</legend>
+        <input type="text" id="filter-location" placeholder="Location" />
+        <label><input type="checkbox" id="filter-remote" /> Remote only</label>
+        <input type="text" id="filter-salary" placeholder="Min salary" />
+      </fieldset>
+
+      <button type="submit">Find matches</button>
+    </form>
+
+    <section id="results"></section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
