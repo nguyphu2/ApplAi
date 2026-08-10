@@ -1,20 +1,18 @@
-# Design docs (kept local only)
 docs/
+.claude
 
-# Python
 __pycache__/
 *.pyc
 .venv/
 venv/
 *.egg-info/
 
-# Node
 node_modules/
 
-# Env / secrets
 .env
 .env.*
+*.env
 
-# OS
+
 .DS_Store
 Thumbs.db
