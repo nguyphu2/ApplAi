@@ -64,7 +64,11 @@ def handler(event, context):
             }),
         )
         result = json.loads(response['body'].read())
-        claude_text = result['content'][0]['text']
+        claude_text = result['content'][0]['text'].strip()
+        if claude_text.startswith('```'):
+            claude_text = claude_text.strip('`').strip()
+            if claude_text.startswith('json'):
+                claude_text = claude_text[4:].strip()
         parsed = json.loads(claude_text)
     except Exception as e:
         return {'statusCode': 502, 'body': json.dumps({'error': f'analysis failed: {e}'})}
