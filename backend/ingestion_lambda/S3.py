@@ -9,9 +9,7 @@ s3_bucket = os.getenv('BUCKET_NAME')
 
 s3_client = boto3.client('s3')
 
-# Jobs with no listed salary get this sentinel as salary_max so a
-# "min_salary" filter never excludes them (see design spec: missing
-# salary data should not disqualify a posting).
+
 SALARY_UNKNOWN_SENTINEL = 10_000_000
 
 
