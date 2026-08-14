@@ -2,39 +2,57 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Applai</title>
+  <title>ApplAI</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
-    <h1>Applai</h1>
+    <h1>ApplAI</h1>
     <div id="auth-status">
       <button id="login-btn">Log in</button>
-      <button id="logout-btn" hidden>Log out</button>
+      <button id="logout-btn" class="secondary hidden">Log out</button>
     </div>
   </header>
 
   <main>
-    <form id="match-form">
-      <label for="resume-file">Resume (PDF)</label>
-      <input type="file" id="resume-file" accept="application/pdf" />
+    <nav class="tabs">
+      <button id="tab-search" class="active">Search</button>
+      <button id="tab-profile">My Profile</button>
+    </nav>
 
-      <label for="skills-text">Skills / resume text</label>
-      <textarea id="skills-text" rows="6"></textarea>
+    <section id="search-section">
+      <form id="match-form">
+        <label for="resume-file">Resume (PDF)</label>
+        <input type="file" id="resume-file" accept="application/pdf" />
 
-      <fieldset>
-        <legend>Filters</legend>
-        <input type="text" id="filter-location" placeholder="Location" />
-        <label><input type="checkbox" id="filter-remote" /> Remote only</label>
-        <input type="text" id="filter-salary" placeholder="Min salary" />
-      </fieldset>
+        <label for="skills-text">Skills / resume text</label>
+        <textarea id="skills-text" rows="6"></textarea>
 
-      <button type="submit">Find matches</button>
-    </form>
+        <fieldset>
+          <legend>Filters</legend>
+          <input type="text" id="filter-location" placeholder="Location" />
+          <label><input type="checkbox" id="filter-remote" /> Remote only</label>
+          <input type="text" id="filter-salary" placeholder="Min salary" />
+        </fieldset>
 
-    <section id="results"></section>
+        <button type="submit">Find matches</button>
+      </form>
+
+      <div id="results"></div>
+    </section>
+
+    <section id="profile-section" class="hidden">
+      <div id="profile-logged-out">
+        <p>Log in to view and edit your saved profile.</p>
+      </div>
+      <div id="profile-logged-in" class="hidden">
+        <label for="profile-skills-text">Skills / resume text</label>
+        <textarea id="profile-skills-text" rows="6" readonly></textarea>
+        <p id="profile-status"></p>
+      </div>
+    </section>
   </main>
 
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
