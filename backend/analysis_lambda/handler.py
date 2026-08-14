@@ -8,6 +8,7 @@ import json
 import os
 
 import boto3
+from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
 load_dotenv('.env')
@@ -47,10 +48,17 @@ def handler(event, context):
     if not job_id or not profile_text:
         return {'statusCode': 400, 'body': json.dumps({'error': 'job_id and profile_text are required'})}
 
+    if len(profile_text) > 20000:
+        return {'statusCode': 400, 'body': json.dumps({'error': 'profile_text exceeds maximum length'})}
+
     try:
         job = fetch_job(job_id)
     except s3_client.exceptions.NoSuchKey:
         return {'statusCode': 404, 'body': json.dumps({'error': f'job {job_id} not found'})}
+    except ClientError as e:
+        if e.response['Error']['Code'] in ('NoSuchKey', 'AccessDenied', '404', '403'):
+            return {'statusCode': 404, 'body': json.dumps({'error': f'job {job_id} not found'})}
+        raise
 
     prompt = build_prompt(profile_text, job)
 
@@ -70,14 +78,17 @@ def handler(event, context):
             if claude_text.startswith('json'):
                 claude_text = claude_text[4:].strip()
         parsed = json.loads(claude_text)
+        explanation = parsed['explanation']
+        skill_gaps = parsed['skill_gaps']
     except Exception as e:
-        return {'statusCode': 502, 'body': json.dumps({'error': f'analysis failed: {e}'})}
+        print(f'analysis failed: {e}')
+        return {'statusCode': 502, 'body': json.dumps({'error': 'analysis failed'})}
 
     return {
         'statusCode': 200,
         'body': json.dumps({
             'job_id': job_id,
-            'explanation': parsed['explanation'],
-            'skill_gaps': parsed['skill_gaps'],
+            'explanation': explanation,
+            'skill_gaps': skill_gaps,
         }),
     }

@@ -9,6 +9,7 @@ import json
 import os
 
 import boto3
+from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
 from filters import build_metadata_filter
@@ -50,8 +51,12 @@ def handler(event, context):
         try:
             pdf_bytes = base64.b64decode(resume_b64)
             resume_text = extract_text_from_pdf(pdf_bytes)
+        except ClientError as e:
+            print(f'Textract call failed: {e}')
+            return {'statusCode': 502, 'body': json.dumps({'error': 'text extraction service failed'})}
         except Exception as e:
-            return {'statusCode': 422, 'body': json.dumps({'error': f'could not read PDF: {e}'})}
+            print(f'could not read PDF: {e}')
+            return {'statusCode': 422, 'body': json.dumps({'error': 'could not read PDF'})}
 
     profile_text = '\n'.join(t for t in [resume_text, skills_text] if t).strip()
     if not profile_text:
@@ -79,7 +84,11 @@ def handler(event, context):
 
     matches = []
     for job_id in seen_job_ids:
-        job = fetch_job(job_id)
+        try:
+            job = fetch_job(job_id)
+        except s3_client.exceptions.NoSuchKey:
+            print(f'skipping missing job {job_id}')
+            continue
         matches.append({
             'job_id': job['job_id'],
             'title': job['title'],
