@@ -1,16 +1,171 @@
+:root {
+  --navy: #0a1f44;
+  --navy-dark: #071530;
+  --bg: #ffffff;
+  --text: #1c1c1c;
+  --text-muted: #5a5a5a;
+  --border: #e2e5ea;
+  --card-bg: #fafbfc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
-  font-family: system-ui, sans-serif;
-  max-width: 720px;
-  margin: 2rem auto;
-  padding: 0 1rem;
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
 }
 
 header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid var(--border);
+}
+
+header h1 {
+  font-size: 1.25rem;
+  color: var(--navy);
+  margin: 0;
+}
+
+button {
+  font-family: inherit;
+  font-size: 0.95rem;
+  padding: 0.5rem 1.1rem;
+  border-radius: 6px;
+  border: 1px solid var(--navy);
+  background: var(--navy);
+  color: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--navy-dark);
+}
+
+button.secondary {
+  background: white;
+  color: var(--navy);
+}
+
+button.secondary:hover {
+  background: var(--card-bg);
+}
+
+main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+nav.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+nav.tabs button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--text-muted);
+  padding: 0.6rem 0.2rem;
+  margin-right: 1.5rem;
+}
+
+nav.tabs button.active {
+  color: var(--navy);
+  border-bottom-color: var(--navy);
+  font-weight: 600;
+}
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: 1rem;
+  margin-bottom: 0.3rem;
+}
+
+input[type="text"], input[type="file"], textarea {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.95rem;
 }
 
 fieldset {
-  margin: 1rem 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 1.25rem;
+  padding: 0.9rem 1rem;
+}
+
+fieldset legend {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding: 0 0.4rem;
+}
+
+fieldset label {
+  display: inline-block;
+  margin-top: 0;
+}
+
+form button[type="submit"] {
+  margin-top: 1.5rem;
+  width: 100%;
+}
+
+#results, #profile-status {
+  margin-top: 2rem;
+}
+
+.job-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card-bg);
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.job-card h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+  color: var(--navy);
+}
+
+.job-card .meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.6rem;
+}
+
+.job-card .analysis {
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.error-message {
+  color: #a4262c;
+  background: #fdf1f1;
+  border: 1px solid #f3c6c6;
+  border-radius: 6px;
+  padding: 0.7rem 1rem;
+  font-size: 0.9rem;
+}
+
+.hidden {
+  display: none !important;
 }
