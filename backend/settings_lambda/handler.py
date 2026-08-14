@@ -6,7 +6,10 @@ import json
 import os
 
 import boto3
+from botocore.exceptions import ClientError
+from dotenv import load_dotenv
 
+load_dotenv('.env')
 TABLE_NAME = os.getenv('SETTINGS_TABLE_NAME')
 
 dynamodb = boto3.resource('dynamodb')
@@ -22,23 +25,31 @@ def handler(event, context):
     method = event['requestContext']['http']['method']
 
     if method == 'GET':
-        response = table.get_item(Key={'user_id': user_id})
-        item = response.get('Item', {})
-        return {
-            'statusCode': 200,
-            'body': json.dumps({
-                'skills_text': item.get('skills_text', ''),
-                'filters': item.get('filters', {}),
-            }),
-        }
+        try:
+            response = table.get_item(Key={'user_id': user_id})
+            item = response.get('Item', {})
+            return {
+                'statusCode': 200,
+                'body': json.dumps({
+                    'skills_text': item.get('skills_text', ''),
+                    'filters': item.get('filters', {}),
+                }),
+            }
+        except ClientError as e:
+            print(f'DynamoDB get_item failed: {e}')
+            return {'statusCode': 502, 'body': json.dumps({'error': 'settings service failed'})}
 
     if method == 'PUT':
-        body = json.loads(event.get('body') or '{}')
-        table.put_item(Item={
-            'user_id': user_id,
-            'skills_text': body.get('skills_text', ''),
-            'filters': body.get('filters', {}),
-        })
-        return {'statusCode': 200, 'body': json.dumps({'status': 'saved'})}
+        try:
+            body = json.loads(event.get('body') or '{}')
+            table.put_item(Item={
+                'user_id': user_id,
+                'skills_text': body.get('skills_text', ''),
+                'filters': body.get('filters', {}),
+            })
+            return {'statusCode': 200, 'body': json.dumps({'status': 'saved'})}
+        except ClientError as e:
+            print(f'DynamoDB put_item failed: {e}')
+            return {'statusCode': 502, 'body': json.dumps({'error': 'settings service failed'})}
 
     return {'statusCode': 405, 'body': json.dumps({'error': 'method not allowed'})}
