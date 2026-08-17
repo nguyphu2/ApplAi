@@ -13,6 +13,21 @@ s3_client = boto3.client('s3')
 SALARY_UNKNOWN_SENTINEL = 10_000_000
 
 
+def list_existing_job_ids():
+    """Job IDs already uploaded from a prior run, so the caller can skip
+    re-uploading unchanged postings instead of rewriting all of them
+    every run."""
+    ids = set()
+    paginator = s3_client.get_paginator('list_objects_v2')
+    for page in paginator.paginate(Bucket=s3_bucket, Prefix='jobs/'):
+        for obj in page.get('Contents', []):
+            key = obj['Key']
+            if key.endswith('.json') and not key.endswith('.metadata.json'):
+                job_id = key.removeprefix('jobs/').removesuffix('.json')
+                ids.add(job_id)
+    return ids
+
+
 def upload(job):
     key = f"jobs/{job['job_id']}.json"
 
@@ -34,6 +49,10 @@ def upload(job):
                 'value': {'type': 'STRING', 'stringValue': job['location'].lower()},
                 'includeForEmbedding': False,
             },
+            'title': {
+                'value': {'type': 'STRING', 'stringValue': job['title'].lower()},
+                'includeForEmbedding': False,
+            },
             'salary_max': {
                 'value': {'type': 'NUMBER', 'numberValue': salary_max},
                 'includeForEmbedding': False,
@@ -49,4 +68,16 @@ def upload(job):
     )
 
     return f"s3://{s3_bucket}/{key}"
+
+
+def upload_locations_manifest(locations):
+    """Writes the deduped, sorted list of individual job locations to a
+    single small S3 object so query_lambda can serve autocomplete
+    suggestions with one cheap GetObject instead of scanning every job."""
+    s3_client.put_object(
+        Bucket=s3_bucket,
+        Key='manifest/locations.json',
+        Body=json.dumps(sorted(locations)).encode('utf-8'),
+        ContentType='application/json',
+    )
 

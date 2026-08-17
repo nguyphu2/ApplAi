@@ -44,3 +44,11 @@ export function putSettings(payload) {
     body: JSON.stringify(payload),
   });
 }
+
+export function autocompleteLocation(query) {
+  return request('/match', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ location_query: query }),
+  }).then((body) => body.suggestions);
+}

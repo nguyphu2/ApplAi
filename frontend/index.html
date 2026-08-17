@@ -3,55 +3,138 @@
 <head>
   <meta charset="utf-8" />
   <title>ApplAI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/png" href="logo-pixel.png" />
 </head>
 <body>
-  <header>
-    <h1>ApplAI</h1>
-    <div id="auth-status">
-      <button id="login-btn">Log in</button>
-      <button id="logout-btn" class="secondary hidden">Log out</button>
-    </div>
-  </header>
+  <div id="auth-status">
+    <button id="login-btn">Log in</button>
+    <button id="logout-btn" class="secondary hidden">Log out</button>
+  </div>
 
-  <main>
-    <nav class="tabs">
-      <button id="tab-search" class="active">Search</button>
-      <button id="tab-profile">My Profile</button>
-    </nav>
-
-    <section id="search-section">
-      <form id="match-form">
-        <label for="resume-file">Resume (PDF)</label>
-        <input type="file" id="resume-file" accept="application/pdf" />
-
-        <label for="skills-text">Skills / resume text</label>
-        <textarea id="skills-text" rows="6"></textarea>
-
-        <fieldset>
-          <legend>Filters</legend>
-          <input type="text" id="filter-location" placeholder="Location" />
-          <label><input type="checkbox" id="filter-remote" /> Remote only</label>
-          <input type="text" id="filter-salary" placeholder="Min salary" />
-        </fieldset>
-
-        <button type="submit">Find matches</button>
-      </form>
-
-      <div id="results"></div>
-    </section>
-
-    <section id="profile-section" class="hidden">
-      <div id="profile-logged-out">
-        <p>Log in to view and edit your saved profile.</p>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <img class="app-logo" src="logo-pixel.png" alt="ApplAI logo" width="28" height="28" />
+        <h1>ApplAI</h1>
       </div>
-      <div id="profile-logged-in" class="hidden">
-        <label for="profile-skills-text">Skills / resume text</label>
-        <textarea id="profile-skills-text" rows="6" readonly></textarea>
-        <p id="profile-status"></p>
-      </div>
-    </section>
-  </main>
+
+      <nav class="sidebar-nav">
+        <button id="tab-search" class="active">Search</button>
+        <button id="tab-profile">My Profile</button>
+        <button id="tab-questions">Question Bank</button>
+      </nav>
+    </aside>
+
+    <main>
+      <section id="search-section">
+        <form id="match-form">
+          <label for="filter-title">Job title</label>
+          <input type="text" id="filter-title" placeholder="e.g. Software Engineer Intern" />
+
+          <div class="filters-dropdown">
+            <button type="button" id="filters-toggle" class="secondary">
+              Filters <span id="filters-toggle-arrow">&#9662;</span>
+            </button>
+            <div id="filters-panel" class="filters-panel hidden">
+              <div class="location-field">
+                <label for="filter-location">Location</label>
+                <input type="text" id="filter-location" placeholder="Location" autocomplete="off" />
+                <ul id="location-suggestions" class="suggestions-list hidden"></ul>
+              </div>
+
+              <label class="checkbox-label"><input type="checkbox" id="filter-remote" /> Remote only</label>
+
+              <label>Salary range</label>
+              <div class="salary-range">
+                <div class="salary-range-track">
+                  <input type="range" id="filter-salary-min" min="0" max="250000" step="5000" value="0" />
+                  <input type="range" id="filter-salary-max" min="0" max="250000" step="5000" value="250000" />
+                </div>
+                <div class="salary-range-labels">
+                  <span id="salary-min-label">$0</span>
+                  <span id="salary-max-label">$250k+</span>
+                </div>
+              </div>
+
+              <label>Minimum match</label>
+              <div class="salary-range">
+                <div class="salary-range-track">
+                  <input type="range" id="filter-relevance" min="0" max="100" step="5" value="0" />
+                </div>
+                <div class="salary-range-labels">
+                  <span id="relevance-label">Any match</span>
+                </div>
+              </div>
+
+              <label for="sort-by">Sort by</label>
+              <select id="sort-by">
+                <option value="relevance">Most relevant (% match)</option>
+                <option value="recent-desc">Most recent (newest first)</option>
+                <option value="recent-asc">Most recent (oldest first)</option>
+              </select>
+
+              <button type="button" id="filters-reset" class="secondary">Reset filters</button>
+            </div>
+          </div>
+
+          <button type="submit">Find matches</button>
+        </form>
+
+        <div id="results"></div>
+      </section>
+
+      <section id="profile-section" class="hidden">
+        <div id="profile-logged-out" class="locked-panel">
+          <img class="lock-icon" src="lock-pixel.png" alt="Locked" />
+          <p>Log in to view and edit your saved profile.</p>
+        </div>
+        <div id="profile-logged-in" class="hidden">
+          <label for="profile-skills-text">Skills / resume text</label>
+          <textarea id="profile-skills-text" rows="6" placeholder="Add additional skills..."></textarea>
+          <button type="button" id="save-skills-btn" class="secondary">Save skills</button>
+          <div class="skills-actions-right">
+            <button type="button" id="edit-skills-btn" class="secondary hidden">Edit</button>
+            <button type="button" id="delete-skills-btn" class="secondary delete-btn hidden">Delete</button>
+          </div>
+
+          <div class="profile-section-block">
+            <h2 class="section-heading">Resumes</h2>
+
+            <label for="resume-upload">Upload a resume (PDF)</label>
+            <div class="file-input-row">
+              <input type="file" id="resume-upload" accept="application/pdf" />
+              <button type="button" id="resume-upload-btn" class="secondary hidden">Upload</button>
+              <button type="button" id="resume-upload-clear" class="secondary delete-btn hidden">Remove</button>
+            </div>
+
+            <div class="saved-resumes-block">
+              <h3 class="subsection-heading">Saved resumes</h3>
+              <label class="checkbox-label">
+                <input type="checkbox" id="resume-none" /> None (use skills text only)
+              </label>
+              <div id="resume-list"></div>
+            </div>
+          </div>
+
+          <p id="profile-status"></p>
+        </div>
+      </section>
+
+      <section id="questions-section" class="hidden">
+        <div id="questions-logged-out" class="locked-panel">
+          <img class="lock-icon" src="lock-pixel.png" alt="Locked" />
+          <p>Log in to view the question bank.</p>
+        </div>
+        <div id="questions-logged-in" class="hidden">
+          <p>Question bank is coming soon.</p>
+        </div>
+      </section>
+    </main>
+  </div>
 
   <script type="module" src="app.js"></script>
 </body>
