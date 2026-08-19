@@ -18,6 +18,26 @@ const profileStatus = document.getElementById('profile-status');
 const saveSkillsBtn = document.getElementById('save-skills-btn');
 const editSkillsBtn = document.getElementById('edit-skills-btn');
 const deleteSkillsBtn = document.getElementById('delete-skills-btn');
+const profileFullName = document.getElementById('profile-full-name');
+const profileEmail = document.getElementById('profile-email');
+const profilePhone = document.getElementById('profile-phone');
+const profileWorkAuthorization = document.getElementById('profile-work-authorization');
+const profileAddress = document.getElementById('profile-address');
+const profileLinkedinUrl = document.getElementById('profile-linkedin-url');
+const profilePortfolioUrl = document.getElementById('profile-portfolio-url');
+const saveProfileInfoBtn = document.getElementById('save-profile-info-btn');
+const editProfileInfoBtn = document.getElementById('edit-profile-info-btn');
+
+const PROFILE_INFO_FIELDS = [
+  ['full_name', profileFullName],
+  ['email', profileEmail],
+  ['phone', profilePhone],
+  ['work_authorization', profileWorkAuthorization],
+  ['address', profileAddress],
+  ['linkedin_url', profileLinkedinUrl],
+  ['portfolio_url', profilePortfolioUrl],
+];
+
 const resumeNoneCheckbox = document.getElementById('resume-none');
 const resumeListEl = document.getElementById('resume-list');
 const resumeUploadInput = document.getElementById('resume-upload');
@@ -423,6 +443,48 @@ deleteSkillsBtn.addEventListener('click', async () => {
   }
 });
 
+function setProfileInfoMode(mode) {
+  const isView = mode === 'view';
+  PROFILE_INFO_FIELDS.forEach(([, input]) => { input.disabled = isView; });
+  saveProfileInfoBtn.classList.toggle('hidden', isView);
+  editProfileInfoBtn.classList.toggle('hidden', !isView);
+}
+
+function fillProfileInfoFields(profileInfo) {
+  PROFILE_INFO_FIELDS.forEach(([key, input]) => {
+    input.value = profileInfo[key] || '';
+  });
+}
+
+function readProfileInfoFields() {
+  const profileInfo = {};
+  PROFILE_INFO_FIELDS.forEach(([key, input]) => {
+    if (input.value.trim()) {
+      profileInfo[key] = input.value.trim();
+    }
+  });
+  return profileInfo;
+}
+
+function hasAnyProfileInfo(profileInfo) {
+  return Object.keys(profileInfo).length > 0;
+}
+
+saveProfileInfoBtn.addEventListener('click', async () => {
+  try {
+    profileSettings = await putSettings({ profile_info: readProfileInfoFields() });
+    setProfileInfoMode(hasAnyProfileInfo(profileSettings.profile_info) ? 'view' : 'edit');
+    profileStatus.textContent = 'Personal info saved.';
+  } catch (err) {
+    profileStatus.textContent = err.message;
+  }
+});
+
+editProfileInfoBtn.addEventListener('click', () => {
+  setProfileInfoMode('edit');
+  profileFullName.focus();
+});
+
 function setResumeUploadButtonsVisible(visible) {
   resumeUploadBtn.classList.toggle('hidden', !visible);
   resumeUploadClearBtn.classList.toggle('hidden', !visible);
@@ -489,6 +551,8 @@ tabProfile.addEventListener('click', async () => {
     profileSkillsText.value = profileSettings.skills_text;
     setSkillsMode(profileSettings.skills_text ? 'view' : 'edit');
     renderResumeList();
+    fillProfileInfoFields(profileSettings.profile_info);
+    setProfileInfoMode(hasAnyProfileInfo(profileSettings.profile_info) ? 'view' : 'edit');
     profileStatus.textContent = '';
   } catch (err) {
     profileStatus.textContent = err.message;

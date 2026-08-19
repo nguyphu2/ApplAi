@@ -623,6 +623,26 @@ form button[type="submit"] {
   border-top: 3px solid var(--border);
 }
 
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.1rem;
+}
+
+.form-grid label {
+  display: block;
+  margin-bottom: 0.4rem;
+}
+
+.form-grid input {
+  width: 100%;
+}
+
+.form-grid-full {
+  grid-column: 1 / -1;
+}
+
 .section-heading {
   font-size: 0.75rem;
   font-weight: 400;
