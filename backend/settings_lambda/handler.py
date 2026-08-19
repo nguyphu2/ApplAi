@@ -39,6 +39,7 @@ def get_item(user_id):
         'filters': item.get('filters', {}),
         'resumes': item.get('resumes', []),
         'active_resume_ids': item.get('active_resume_ids', []),
+        'profile_info': item.get('profile_info', {}),
     }
 
 
@@ -63,6 +64,9 @@ def handler(event, context):
 
             if 'filters' in body:
                 item['filters'] = body['filters']
+
+            if 'profile_info' in body:
+                item['profile_info'] = body['profile_info']
 
             add_resume = body.get('add_resume')
             if add_resume:
