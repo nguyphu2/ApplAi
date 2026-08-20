@@ -1,5 +1,6 @@
 const CLIENT_ID = '5fub35eljp359gg26pdckauqvr';
 const COGNITO_DOMAIN = 'https://applai-nguyphu2.auth.us-east-1.amazoncognito.com';
+const API_BASE = 'https://q3xyo18vh7.execute-api.us-east-1.amazonaws.com';
 
 function base64UrlEncode(buffer) {
   return btoa(String.fromCharCode(...new Uint8Array(buffer)))
@@ -70,6 +71,39 @@ async function isLoggedIn() {
   return !!id_token;
 }
 
+async function getProfile() {
+  const { id_token } = await chrome.storage.local.get('id_token');
+  if (!id_token) {
+    throw new Error('not logged in');
+  }
+  const response = await fetch(`${API_BASE}/settings`, {
+    headers: { Authorization: `Bearer ${id_token}` },
+  });
+  if (!response.ok) {
+    throw new Error('could not load your profile');
+  }
+  const settings = await response.json();
+  return settings.profile_info || {};
+}
+
+async function fillActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab) {
+    throw new Error('no active tab');
+  }
+  const profile = await getProfile();
+
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: (p) => { window.__applaiProfile = p; },
+    args: [profile],
+  });
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ['matcher.js', 'content.js'],
+  });
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'LOGIN') {
     login()
@@ -83,6 +117,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === 'CHECK_LOGIN') {
     isLoggedIn().then((loggedIn) => sendResponse({ loggedIn }));
+    return true;
+  }
+  if (message.type === 'FILL') {
+    fillActiveTab()
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }
 });

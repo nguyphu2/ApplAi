@@ -34,3 +34,17 @@ logoutBtn.addEventListener('click', async () => {
   const { loggedIn } = await sendMessage({ type: 'CHECK_LOGIN' });
   setLoggedInUI(loggedIn);
 })();
+
+fillBtn.addEventListener('click', async () => {
+  statusEl.textContent = 'Filling...';
+  const result = await sendMessage({ type: 'FILL' });
+  if (!result.ok) {
+    statusEl.textContent = result.error || 'Fill failed.';
+  }
+});
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === 'FILL_RESULT') {
+    statusEl.textContent = `Filled ${message.filled} of ${message.total} fields.`;
+  }
+});
