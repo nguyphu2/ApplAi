@@ -23,6 +23,9 @@ const profileEmail = document.getElementById('profile-email');
 const profilePhone = document.getElementById('profile-phone');
 const profileWorkAuthorization = document.getElementById('profile-work-authorization');
 const profileAddress = document.getElementById('profile-address');
+const profileCity = document.getElementById('profile-city');
+const profileState = document.getElementById('profile-state');
+const profileZipCode = document.getElementById('profile-zip-code');
 const profileLinkedinUrl = document.getElementById('profile-linkedin-url');
 const profilePortfolioUrl = document.getElementById('profile-portfolio-url');
 const saveProfileInfoBtn = document.getElementById('save-profile-info-btn');
@@ -34,6 +37,9 @@ const PROFILE_INFO_FIELDS = [
   ['phone', profilePhone],
   ['work_authorization', profileWorkAuthorization],
   ['address', profileAddress],
+  ['city', profileCity],
+  ['state', profileState],
+  ['zip_code', profileZipCode],
   ['linkedin_url', profileLinkedinUrl],
   ['portfolio_url', profilePortfolioUrl],
 ];

@@ -2,18 +2,119 @@
 <html>
 <head>
   <meta charset="utf-8" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
   <style>
-    body { font-family: system-ui, sans-serif; width: 220px; padding: 12px; }
-    h3 { margin: 0 0 8px; }
-    button { width: 100%; padding: 8px; margin-top: 8px; cursor: pointer; }
-    .hidden { display: none; }
-    #status { font-size: 12px; color: #555; margin-top: 8px; }
+    :root {
+      --bg: #ffffff;
+      --panel-bg-alt: #eef2fb;
+      --blue: #3b82f6;
+      --blue-bright: #1e50c4;
+      --blue-dark: #16336e;
+      --navy: #0a1f44;
+      --text: #0a1330;
+      --text-muted: #5b6580;
+      --border: #0a1f44;
+      --notch-sm: 4px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 240px;
+      margin: 0;
+      padding: 1rem;
+      font-family: "Press Start 2P", monospace;
+      font-size: 0.65rem;
+      line-height: 1.6;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 1rem;
+    }
+
+    .brand img {
+      width: 22px;
+      height: 22px;
+      image-rendering: pixelated;
+    }
+
+    .brand h1 {
+      font-size: 0.75rem;
+      font-weight: 400;
+      color: var(--navy);
+      margin: 0;
+    }
+
+    button {
+      display: block;
+      width: 100%;
+      font-family: inherit;
+      font-size: 0.6rem;
+      line-height: 1.4;
+      padding: 0.7rem 0.8rem;
+      margin-top: 0.6rem;
+      border: 3px solid var(--navy);
+      background: var(--blue);
+      color: #ffffff;
+      cursor: pointer;
+      clip-path: polygon(
+        0 var(--notch-sm), var(--notch-sm) 0,
+        calc(100% - var(--notch-sm)) 0, 100% var(--notch-sm),
+        100% calc(100% - var(--notch-sm)), calc(100% - var(--notch-sm)) 100%,
+        var(--notch-sm) 100%, 0 calc(100% - var(--notch-sm))
+      );
+      filter: drop-shadow(3px 3px 0 var(--navy));
+      transition: transform 0.05s ease;
+    }
+
+    button:hover {
+      background: var(--blue-dark);
+    }
+
+    button:active {
+      transform: translate(3px, 3px);
+      filter: drop-shadow(0 0 0 var(--navy));
+    }
+
+    button.secondary {
+      background: var(--panel-bg-alt);
+      color: var(--blue-bright);
+      border-color: var(--blue);
+    }
+
+    button.secondary:hover {
+      background: var(--panel-bg-alt);
+      filter: drop-shadow(3px 3px 0 var(--navy)) brightness(0.97);
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    #status {
+      font-size: 0.55rem;
+      line-height: 1.7;
+      color: var(--text-muted);
+      margin: 0.8rem 0 0;
+    }
   </style>
 </head>
 <body>
-  <h3>ApplAI Autofill</h3>
+  <div class="brand">
+    <img src="icons/icon128.png" alt="ApplAI logo" />
+    <h1>ApplAI Autofill</h1>
+  </div>
   <button id="login-btn">Log in</button>
-  <button id="logout-btn" class="hidden">Log out</button>
+  <button id="logout-btn" class="secondary hidden">Log out</button>
   <button id="fill-btn" class="hidden">Fill this page</button>
   <p id="status"></p>
   <script src="popup.js"></script>

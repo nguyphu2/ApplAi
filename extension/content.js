@@ -26,6 +26,9 @@
       id: field.id || '',
       placeholder: field.placeholder || '',
     };
+    if (field.value.trim()) {
+      continue;
+    }
     const match = matchField(descriptor, profile);
     if (match) {
       fillField(field, match.value);
