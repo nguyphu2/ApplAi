@@ -62,6 +62,27 @@ test('matches a Zip code field', () => {
   assert.deepEqual(result, { profileKey: 'zip_code', value: '97201' });
 });
 
+test('a zip field nested under an "address" name attribute matches zip_code, not address (precedence regression)', () => {
+  const result = matchField({ label: 'Zip Code', name: 'address[zip]', id: '', placeholder: '' }, PROFILE);
+  assert.deepEqual(result, { profileKey: 'zip_code', value: '97201' });
+});
+
+test('a state field nested under a "mailing address" name attribute matches state, not address', () => {
+  const result = matchField({ label: 'State', name: 'mailing_address_state', id: '', placeholder: '' }, PROFILE);
+  assert.deepEqual(result, { profileKey: 'state', value: 'OR' });
+});
+
+test('a city field nested under an "address" id attribute matches city, not address', () => {
+  const result = matchField({ label: 'City', name: '', id: 'address-city', placeholder: '' }, PROFILE);
+  assert.deepEqual(result, { profileKey: 'city', value: 'Portland' });
+});
+
+test('a genuine street-address field still matches address when no more-specific term is present', () => {
+  const PROFILE_WITH_ADDRESS = { ...PROFILE, address: '123 Analytical Engine Way' };
+  const result = matchField({ label: 'Street Address', name: 'address_line1', id: '', placeholder: '' }, PROFILE_WITH_ADDRESS);
+  assert.deepEqual(result, { profileKey: 'address', value: '123 Analytical Engine Way' });
+});
+
 test('does not false-fill a "estate" or "statement" field via the bare state/zip synonyms', () => {
   const result = matchField({ label: 'Estate Planning Notes', name: 'statementField', id: '', placeholder: '' }, PROFILE);
   assert.equal(result, null);
