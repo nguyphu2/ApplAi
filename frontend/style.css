@@ -447,6 +447,11 @@ form button[type="submit"] {
   filter: drop-shadow(6px 6px 0 var(--navy));
 }
 
+.job-card:active {
+  transform: translate(-5px, -5px);
+  filter: drop-shadow(11px 11px 0 var(--navy));
+}
+
 #load-more-btn {
   display: block;
   width: 100%;
@@ -709,10 +714,9 @@ form button[type="submit"] {
 }
 
 .posted-date {
-  text-align: right;
   font-size: 0.5rem;
   color: var(--text-muted);
-  margin-bottom: 0.6rem;
+  margin-bottom: 0.9rem;
 }
 
 .job-card {

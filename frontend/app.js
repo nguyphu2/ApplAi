@@ -243,7 +243,6 @@ function renderMatches() {
 
   resultsEl.innerHTML = matches.map((job) => `
     <div class="job-card" data-job-id="${job.job_id}" data-listing-url="${job.listing_url}">
-      ${job.ingested_at ? `<div class="posted-date">${new Date(job.ingested_at).toLocaleDateString()}</div>` : ''}
       ${job.match_score !== null && job.match_score !== undefined ? `
         <div class="match-bar-row">
           <div class="match-bar-track"><div class="match-bar-fill" style="width: ${job.match_score}%; background: ${matchBarColor(job.match_score)}"></div></div>
@@ -255,6 +254,7 @@ function renderMatches() {
         <span class="company-name">${job.company}</span> — ${job.location}${job.remote ? ' (Remote)' : ''}
         ${job.salary_min ? ` — $${job.salary_min.toLocaleString()}-$${job.salary_max.toLocaleString()}` : ''}
       </div>
+      ${job.ingested_at ? `<div class="posted-date">${new Date(job.ingested_at).toLocaleDateString()}</div>` : ''}
       <div class="analyze-row">
         <button class="secondary analyze-btn">${isLoggedIn() ? 'Job match analysis' : '🔒 Job match analysis'}</button>
         <div class="analysis-result"></div>
