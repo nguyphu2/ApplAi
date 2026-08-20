@@ -1,4 +1,4 @@
-(function () {
+(async function () {
   const profile = window.__applaiProfile || {};
 
   document.querySelectorAll('[data-applai-field-id]').forEach((el) => {
@@ -6,6 +6,27 @@
   });
 
   const runId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+  // Some sections (education, work history) start collapsed behind an
+  // "Add X" button and have no fields in the DOM at all until clicked.
+  // Deliberately narrow allowlist rather than a generic "anything
+  // expandable" heuristic - a broad heuristic risks clicking something
+  // destructive or unrelated (submit, navigate away, an unrelated modal).
+  const EXPANDABLE_BUTTON_PHRASES = [
+    'add education', 'add work history', 'add employment', 'add experience',
+    'add another education', 'add another job', 'add certification', 'add license',
+  ];
+
+  function isExpandableButton(button) {
+    const text = button.textContent.trim().toLowerCase();
+    return EXPANDABLE_BUTTON_PHRASES.some((phrase) => text === phrase || text.includes(phrase));
+  }
+
+  const expandButtons = Array.from(document.querySelectorAll('button')).filter(isExpandableButton);
+  for (const button of expandButtons) {
+    button.click();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
 
   function getLabelText(input) {
     if (input.labels && input.labels.length > 0) {
@@ -21,6 +42,10 @@
     return dataFor || '';
   }
 
+  function isRequiredField(input, labelText) {
+    return input.required || input.getAttribute('aria-required') === 'true' || labelText.includes('*');
+  }
+
   function fillField(input, value) {
     input.value = value;
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -31,15 +56,26 @@
   const fields = Array.from(document.querySelectorAll(SELECTOR));
 
   let filled = 0;
+  let requiredTotal = 0;
+  let requiredFilled = 0;
   const unmatched = [];
   let nextFieldId = 0;
 
   for (const field of fields) {
+    const labelText = getLabelText(field);
+    const required = isRequiredField(field, labelText);
+    if (required) {
+      requiredTotal += 1;
+    }
+
     if (field.value.trim()) {
+      if (required) {
+        requiredFilled += 1;
+      }
       continue;
     }
     const descriptor = {
-      label: getLabelText(field),
+      label: labelText,
       name: field.name || '',
       id: field.id || '',
       placeholder: field.placeholder || '',
@@ -48,6 +84,9 @@
     if (match) {
       fillField(field, match.value);
       filled += 1;
+      if (required) {
+        requiredFilled += 1;
+      }
     } else {
       const fieldId = 'applai-field-' + runId + '-' + nextFieldId;
       nextFieldId += 1;
@@ -59,6 +98,7 @@
         id: descriptor.id,
         placeholder: descriptor.placeholder,
         type: field.tagName === 'TEXTAREA' ? 'textarea' : field.type,
+        required,
       });
     }
   }
@@ -67,6 +107,8 @@
     type: 'LOCAL_FILL_DONE',
     filled,
     total: fields.length,
+    requiredTotal,
+    requiredFilled,
     unmatched,
     pageUrl: window.location.href,
     pageTitle: document.title,

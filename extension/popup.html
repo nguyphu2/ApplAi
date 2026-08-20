@@ -16,6 +16,7 @@
       --text: #0a1330;
       --text-muted: #5b6580;
       --border: #0a1f44;
+      --success: #1a7a4c;
       --notch-sm: 4px;
     }
 
@@ -24,9 +25,9 @@
     }
 
     body {
-      width: 240px;
+      width: 340px;
       margin: 0;
-      padding: 1rem;
+      padding: 1.1rem;
       font-family: "Press Start 2P", monospace;
       font-size: 0.65rem;
       line-height: 1.6;
@@ -42,13 +43,13 @@
     }
 
     .brand img {
-      width: 22px;
-      height: 22px;
+      width: 26px;
+      height: 26px;
       image-rendering: pixelated;
     }
 
     .brand h1 {
-      font-size: 0.75rem;
+      font-size: 0.8rem;
       font-weight: 400;
       color: var(--navy);
       margin: 0;
@@ -58,9 +59,9 @@
       display: block;
       width: 100%;
       font-family: inherit;
-      font-size: 0.6rem;
+      font-size: 0.62rem;
       line-height: 1.4;
-      padding: 0.7rem 0.8rem;
+      padding: 0.75rem 0.8rem;
       margin-top: 0.6rem;
       border: 3px solid var(--navy);
       background: var(--blue);
@@ -85,6 +86,12 @@
       filter: drop-shadow(0 0 0 var(--navy));
     }
 
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
     button.secondary {
       background: var(--panel-bg-alt);
       color: var(--blue-bright);
@@ -98,6 +105,87 @@
 
     .hidden {
       display: none;
+    }
+
+    #fill-progress {
+      margin-top: 1rem;
+      padding-top: 0.9rem;
+      border-top: 2px solid var(--panel-bg-alt);
+    }
+
+    .progress-block {
+      margin-top: 0.9rem;
+    }
+
+    .progress-block:first-child {
+      margin-top: 0;
+    }
+
+    .progress-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.58rem;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+
+    .progress-count {
+      color: var(--text);
+    }
+
+    .progress-track {
+      height: 12px;
+      border: 2px solid var(--navy);
+      background: var(--panel-bg-alt);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--blue);
+      transition: width 0.35s ease;
+    }
+
+    .progress-fill.required {
+      background: var(--blue-dark);
+    }
+
+    .progress-track.indeterminate .progress-fill {
+      width: 35%;
+      background: var(--blue);
+      animation: applai-indeterminate 1s linear infinite;
+    }
+
+    @keyframes applai-indeterminate {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(285%); }
+    }
+
+    .fill-state {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.6rem;
+    }
+
+    .fill-state-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+      border: 2px solid var(--navy);
+      color: #ffffff;
+      background: var(--blue);
+      font-size: 0.55rem;
+    }
+
+    .fill-state-icon.done {
+      background: var(--success);
     }
 
     #status {
@@ -116,6 +204,34 @@
   <button id="login-btn">Log in</button>
   <button id="logout-btn" class="secondary hidden">Log out</button>
   <button id="fill-btn" class="hidden">Fill this page</button>
+
+  <div id="fill-progress" class="hidden">
+    <div class="progress-block">
+      <div class="fill-state">
+        <span id="fill-state-icon" class="fill-state-icon">…</span>
+        <span id="fill-state-label">Filling this page...</span>
+      </div>
+    </div>
+    <div class="progress-block">
+      <div class="progress-heading">
+        <span>Fields answered</span>
+        <span id="fields-progress-count" class="progress-count">0 / 0</span>
+      </div>
+      <div id="fields-progress-track" class="progress-track">
+        <div id="fields-progress-fill" class="progress-fill"></div>
+      </div>
+    </div>
+    <div class="progress-block">
+      <div class="progress-heading">
+        <span>Required fields</span>
+        <span id="required-progress-count" class="progress-count">0 / 0</span>
+      </div>
+      <div id="required-progress-track" class="progress-track">
+        <div id="required-progress-fill" class="progress-fill required"></div>
+      </div>
+    </div>
+  </div>
+
   <p id="status"></p>
   <script src="popup.js"></script>
 </body>

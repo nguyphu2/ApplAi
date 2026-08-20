@@ -48,12 +48,17 @@ Structured profile:
 Resume / skills text:
 {profile_text}
 
-Unmatched form fields (each has a field_id, label, name, id, placeholder, type):
+Unmatched form fields (each has a field_id, label, name, id, placeholder,
+type, and required - a boolean indicating whether the form marks the
+field as required):
 {fields_json}
 
 For each field, decide if the structured profile or resume/skills text
-above contains a clear, confident answer. Respond with ONLY a JSON object
-in this exact shape, no other text before or after it:
+above contains a clear, confident answer. Fields marked required: true
+matter more - make an extra effort to find a defensible answer for them
+from the profile or resume, but still never guess wildly on any field.
+Respond with ONLY a JSON object in this exact shape, no other text before
+or after it:
 {{"fills": [{{"field_id": "...", "value": "..."}}]}}
 Only include a field in "fills" if you are confident about its value.
 Omit any field you cannot confidently answer - do not guess."""
