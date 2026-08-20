@@ -106,6 +106,27 @@ test('does not false-fill a "estate" or "statement" field via the bare state/zip
   assert.equal(result, null);
 });
 
+test('does not fill home city into an education-history city field (real-world Paylocity id pattern)', () => {
+  const result = matchField({ label: 'City', name: '', id: 'educationHistory.city.0', placeholder: '' }, PROFILE);
+  assert.equal(result, null);
+});
+
+test('does not fill home state into a work-history state field', () => {
+  const result = matchField({ label: 'State', name: '', id: 'workHistory.state.1', placeholder: '' }, PROFILE);
+  assert.equal(result, null);
+});
+
+test('does not fill home address into a school address field', () => {
+  const PROFILE_WITH_ADDRESS = { ...PROFILE, address: '123 Analytical Engine Way' };
+  const result = matchField({ label: 'Address', name: '', id: 'educationHistory.address.0', placeholder: '' }, PROFILE_WITH_ADDRESS);
+  assert.equal(result, null);
+});
+
+test('a genuine home city field with no other-context signal still matches (no regression from the exclusion guard)', () => {
+  const result = matchField({ label: 'City', name: 'homeCity', id: '', placeholder: '' }, PROFILE);
+  assert.deepEqual(result, { profileKey: 'city', value: 'Portland' });
+});
+
 test('can be injected twice without redeclaration errors (regression for SyntaxError on double-injection)', () => {
   delete require.cache[require.resolve('../matcher.js')];
   require('../matcher.js');

@@ -12,7 +12,13 @@
       return input.labels[0].textContent.trim();
     }
     const ariaLabel = input.getAttribute('aria-label');
-    return ariaLabel || '';
+    if (ariaLabel) return ariaLabel;
+    // Some ATS platforms (e.g. Paylocity) render the visible label text
+    // elsewhere in the DOM and only expose it via a non-standard data-for
+    // attribute on the input itself, rather than a real <label> or
+    // aria-label - this is the fallback for that pattern.
+    const dataFor = input.getAttribute('data-for');
+    return dataFor || '';
   }
 
   function fillField(input, value) {
