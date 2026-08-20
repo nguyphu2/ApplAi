@@ -17,6 +17,24 @@ test('matches a field by its label text', () => {
   assert.deepEqual(result, { profileKey: 'full_name', value: 'Ada Lovelace' });
 });
 
+test('matches a First Name field to first_name, not full_name', () => {
+  const profileWithNames = { ...PROFILE, first_name: 'Ada', last_name: 'Lovelace' };
+  const result = matchField({ label: 'First Name', name: 'firstName', id: '', placeholder: '' }, profileWithNames);
+  assert.deepEqual(result, { profileKey: 'first_name', value: 'Ada' });
+});
+
+test('matches a Last Name field to last_name', () => {
+  const profileWithNames = { ...PROFILE, first_name: 'Ada', last_name: 'Lovelace' };
+  const result = matchField({ label: 'Last Name', name: 'lastName', id: '', placeholder: '' }, profileWithNames);
+  assert.deepEqual(result, { profileKey: 'last_name', value: 'Lovelace' });
+});
+
+test('a full-name field still matches full_name even when first_name/last_name are also set', () => {
+  const profileWithNames = { ...PROFILE, first_name: 'Ada', last_name: 'Lovelace' };
+  const result = matchField({ label: 'Full Name', name: 'fullName', id: '', placeholder: '' }, profileWithNames);
+  assert.deepEqual(result, { profileKey: 'full_name', value: 'Ada Lovelace' });
+});
+
 test('matches a field by its name attribute when label is missing', () => {
   const result = matchField({ label: '', name: 'email_address', id: '', placeholder: '' }, PROFILE);
   assert.deepEqual(result, { profileKey: 'email', value: 'ada@example.com' });

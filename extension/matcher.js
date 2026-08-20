@@ -1,4 +1,6 @@
 var SYNONYMS = {
+  first_name: ['first name', 'firstname', 'given name', 'fname'],
+  last_name: ['last name', 'lastname', 'surname', 'family name', 'lname'],
   full_name: ['full name', 'fullname', 'your name', 'first and last name', 'legal name', 'applicant name'],
   email: ['email', 'e-mail', 'email address'],
   phone: ['phone', 'telephone', 'mobile', 'cell', 'contact number'],

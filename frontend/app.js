@@ -19,6 +19,8 @@ const saveSkillsBtn = document.getElementById('save-skills-btn');
 const editSkillsBtn = document.getElementById('edit-skills-btn');
 const deleteSkillsBtn = document.getElementById('delete-skills-btn');
 const profileFullName = document.getElementById('profile-full-name');
+const profileFirstName = document.getElementById('profile-first-name');
+const profileLastName = document.getElementById('profile-last-name');
 const profileEmail = document.getElementById('profile-email');
 const profilePhone = document.getElementById('profile-phone');
 const profileWorkAuthorization = document.getElementById('profile-work-authorization');
@@ -33,6 +35,8 @@ const editProfileInfoBtn = document.getElementById('edit-profile-info-btn');
 
 const PROFILE_INFO_FIELDS = [
   ['full_name', profileFullName],
+  ['first_name', profileFirstName],
+  ['last_name', profileLastName],
   ['email', profileEmail],
   ['phone', profilePhone],
   ['work_authorization', profileWorkAuthorization],
