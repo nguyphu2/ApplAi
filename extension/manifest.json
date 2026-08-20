@@ -15,5 +15,9 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["identity", "storage", "scripting", "activeTab"]
+  "permissions": ["identity", "storage", "scripting", "activeTab"],
+  "host_permissions": [
+    "https://q3xyo18vh7.execute-api.us-east-1.amazonaws.com/*",
+    "https://applai-nguyphu2.auth.us-east-1.amazoncognito.com/*"
+  ]
 }

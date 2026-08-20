@@ -15,7 +15,7 @@
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  const SELECTOR = 'input[type="text"], input[type="email"], input[type="tel"], input:not([type]), textarea';
+  const SELECTOR = 'input[type="text"], input[type="email"], input[type="tel"], input[type="url"], input[type="number"], input:not([type]), textarea';
   const fields = Array.from(document.querySelectorAll(SELECTOR));
 
   let filled = 0;

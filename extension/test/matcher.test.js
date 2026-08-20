@@ -33,3 +33,22 @@ test('returns null when a synonym matches but the profile has no value for that 
   const result = matchField({ label: 'LinkedIn URL', name: '', id: '', placeholder: '' }, PROFILE);
   assert.equal(result, null);
 });
+
+test('does not false-fill a firstName field with the full name (word-boundary check)', () => {
+  const result = matchField({ label: 'First Name', name: 'firstName', id: '', placeholder: '' }, PROFILE);
+  assert.equal(result, null);
+});
+
+test('does not false-fill a companyName field with the full name', () => {
+  const result = matchField({ label: 'Company Name', name: 'companyName', id: '', placeholder: '' }, PROFILE);
+  assert.equal(result, null);
+});
+
+test('can be injected twice without redeclaration errors (regression for SyntaxError on double-injection)', () => {
+  delete require.cache[require.resolve('../matcher.js')];
+  require('../matcher.js');
+  delete require.cache[require.resolve('../matcher.js')];
+  const second = require('../matcher.js');
+  const result = second.matchField({ label: 'Full Name', name: '', id: '', placeholder: '' }, PROFILE);
+  assert.deepEqual(result, { profileKey: 'full_name', value: 'Ada Lovelace' });
+});

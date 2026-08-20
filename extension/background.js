@@ -80,6 +80,10 @@ async function getProfile() {
     headers: { Authorization: `Bearer ${id_token}` },
   });
   if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      await chrome.storage.local.remove(['id_token', 'access_token']);
+      throw new Error('your session expired — please log in again');
+    }
     throw new Error('could not load your profile');
   }
   const settings = await response.json();
