@@ -242,7 +242,7 @@ function renderMatches() {
   const matches = allMatches.slice(0, visibleCount);
 
   resultsEl.innerHTML = matches.map((job) => `
-    <div class="job-card" data-job-id="${job.job_id}">
+    <div class="job-card" data-job-id="${job.job_id}" data-listing-url="${job.listing_url}">
       ${job.ingested_at ? `<div class="posted-date">${new Date(job.ingested_at).toLocaleDateString()}</div>` : ''}
       ${job.match_score !== null && job.match_score !== undefined ? `
         <div class="match-bar-row">
@@ -250,7 +250,7 @@ function renderMatches() {
           <span class="match-bar-label">${job.match_score}% match</span>
         </div>
       ` : ''}
-      <a class="job-title-link" href="${job.listing_url}" target="_blank" rel="noopener"><h3>${job.title}</h3></a>
+      <h3 class="job-title">${job.title}</h3>
       <div class="meta">
         <span class="company-name">${job.company}</span> — ${job.location}${job.remote ? ' (Remote)' : ''}
         ${job.salary_min ? ` — $${job.salary_min.toLocaleString()}-$${job.salary_max.toLocaleString()}` : ''}
@@ -269,6 +269,15 @@ function renderMatches() {
       renderMatches();
     });
   }
+
+  resultsEl.querySelectorAll('.job-card').forEach((card) => {
+    card.addEventListener('click', (event) => {
+      if (event.target.closest('.analyze-row')) {
+        return;
+      }
+      window.open(card.dataset.listingUrl, '_blank', 'noopener');
+    });
+  });
 
   resultsEl.querySelectorAll('.analyze-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {

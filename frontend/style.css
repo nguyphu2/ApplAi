@@ -371,6 +371,7 @@ form button[type="submit"] {
   background: var(--panel-bg);
   padding: 1.25rem 1.4rem;
   margin-bottom: 1.25rem;
+  cursor: pointer;
   clip-path: polygon(
     0 var(--notch), var(--notch) 0,
     calc(100% - var(--notch)) 0, 100% var(--notch),
@@ -409,21 +410,12 @@ form button[type="submit"] {
   color: var(--text);
 }
 
-.job-title-link {
-  display: block;
-  padding-right: 72px;
-  text-decoration: none;
-}
-
 .job-card h3 {
   margin: 0 0 0.6rem;
+  padding-right: 72px;
   font-size: 0.8rem;
   font-weight: 400;
   color: var(--blue-bright);
-}
-
-.job-title-link:hover h3 {
-  text-decoration: underline;
 }
 
 .job-card .meta {

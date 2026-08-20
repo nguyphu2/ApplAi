@@ -2,15 +2,12 @@ SALARY_UNKNOWN_SENTINEL = 10_000_000
 
 
 def build_metadata_filter(filters):
+    """Bedrock Knowledge Bases backed by S3 Vectors only support exact/range
+    filter operators (equals, greaterThanOrEquals, etc.) - STRING_CONTAINS
+    is rejected with a ValidationException. So title/location, which need
+    substring matching, are deliberately left out of this filter and are
+    instead applied client-side after retrieval via job_matches_filters."""
     conditions = []
-
-    location = filters.get('location')
-    if location:
-        conditions.append({'stringContains': {'key': 'location', 'value': location.lower()}})
-
-    title = filters.get('title')
-    if title:
-        conditions.append({'stringContains': {'key': 'title', 'value': title.lower()}})
 
     if filters.get('remote'):
         conditions.append({'equals': {'key': 'remote', 'value': True}})

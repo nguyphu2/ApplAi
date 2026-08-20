@@ -26,6 +26,8 @@ agent_runtime = boto3.client('bedrock-agent-runtime')
 MAX_RESULTS = 50  # frontend reveals these 10 at a time via "Load more"
 BROWSE_SCAN_LIMIT = 300  # cap how many candidates we'll fetch in browse mode
 BROWSE_FETCH_WORKERS = 20
+SEMANTIC_SCAN_LIMIT = 100  # max allowed by Bedrock retrieve(); used when
+                            # title/location need client-side post-filtering
 
 
 def job_id_from_uri(uri):
@@ -135,8 +137,11 @@ def handler(event, context):
 
     scores_by_job_id = {}
     if profile_text:
+        needs_post_filter = bool(filters.get('title') or filters.get('location'))
+        num_results = SEMANTIC_SCAN_LIMIT if needs_post_filter else MAX_RESULTS
+
         metadata_filter = build_metadata_filter(filters)
-        retrieval_configuration = {'vectorSearchConfiguration': {'numberOfResults': MAX_RESULTS}}
+        retrieval_configuration = {'vectorSearchConfiguration': {'numberOfResults': num_results}}
         if metadata_filter:
             retrieval_configuration['vectorSearchConfiguration']['filter'] = metadata_filter
 
@@ -160,6 +165,9 @@ def handler(event, context):
                 jobs.append(fetch_job(job_id))
             except s3_client.exceptions.NoSuchKey:
                 print(f'skipping missing job {job_id}')
+
+        if needs_post_filter:
+            jobs = [job for job in jobs if job_matches_filters(job, filters)][:MAX_RESULTS]
     else:
         jobs, scores_by_job_id = browse_jobs(filters)
 
