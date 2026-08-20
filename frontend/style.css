@@ -412,7 +412,6 @@ form button[type="submit"] {
 
 .job-card h3 {
   margin: 0 0 0.6rem;
-  padding-right: 72px;
   font-size: 0.8rem;
   font-weight: 400;
   color: var(--blue-bright);
@@ -710,11 +709,10 @@ form button[type="submit"] {
 }
 
 .posted-date {
-  position: absolute;
-  top: 0.9rem;
-  right: 1.1rem;
+  text-align: right;
   font-size: 0.5rem;
   color: var(--text-muted);
+  margin-bottom: 0.6rem;
 }
 
 .job-card {
