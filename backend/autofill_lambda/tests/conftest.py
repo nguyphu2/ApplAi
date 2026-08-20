@@ -15,6 +15,11 @@ def handler_module():
     os.environ['AWS_ACCESS_KEY_ID'] = 'testing'
     os.environ['AWS_SECRET_ACCESS_KEY'] = 'testing'
 
+    # Add parent directory to sys.path so we can import handler
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if parent_dir not in sys.path:
+        sys.path.insert(0, parent_dir)
+
     with mock_aws():
         dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
         dynamodb.create_table(

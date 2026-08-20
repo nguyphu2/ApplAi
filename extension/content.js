@@ -1,6 +1,12 @@
 (function () {
   const profile = window.__applaiProfile || {};
 
+  document.querySelectorAll('[data-applai-field-id]').forEach((el) => {
+    el.removeAttribute('data-applai-field-id');
+  });
+
+  const runId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
   function getLabelText(input) {
     if (input.labels && input.labels.length > 0) {
       return input.labels[0].textContent.trim();
@@ -37,7 +43,7 @@
       fillField(field, match.value);
       filled += 1;
     } else {
-      const fieldId = 'applai-field-' + nextFieldId;
+      const fieldId = 'applai-field-' + runId + '-' + nextFieldId;
       nextFieldId += 1;
       field.setAttribute('data-applai-field-id', fieldId);
       unmatched.push({

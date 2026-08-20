@@ -113,12 +113,15 @@ function applyRemoteFillPlan(fills) {
   for (const { field_id, value } of fills) {
     const field = document.querySelector(`[data-applai-field-id="${field_id}"]`);
     if (!field) continue;
+    if (field.value.trim()) continue;
     field.value = value;
     field.dispatchEvent(new Event('input', { bubbles: true }));
     field.dispatchEvent(new Event('change', { bubbles: true }));
-    field.removeAttribute('data-applai-field-id');
     filled += 1;
   }
+  document.querySelectorAll('[data-applai-field-id]').forEach((el) => {
+    el.removeAttribute('data-applai-field-id');
+  });
   return filled;
 }
 
@@ -126,25 +129,47 @@ async function handleLocalFillDone(message, tabId) {
   const { filled: localFilled, total, unmatched, pageUrl, pageTitle } = message;
 
   if (!unmatched || unmatched.length === 0) {
-    chrome.runtime.sendMessage({ type: 'FILL_RESULT', filled: localFilled, total, remoteFilled: 0 });
+    chrome.runtime.sendMessage({ type: 'FILL_RESULT', filled: localFilled, total, remoteFilled: 0 }).catch(() => {});
+    return;
+  }
+
+  const { id_token } = await chrome.storage.local.get('id_token');
+  if (!id_token) {
+    chrome.runtime.sendMessage({
+      type: 'FILL_RESULT',
+      filled: localFilled,
+      total,
+      remoteFilled: 0,
+      remoteError: 'your session expired — please log in again',
+    }).catch(() => {});
     return;
   }
 
   try {
-    const { id_token } = await chrome.storage.local.get('id_token');
     const response = await fetch(`${API_BASE}/autofill`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${id_token}` },
       body: JSON.stringify({ fields: unmatched, page_url: pageUrl, page_title: pageTitle }),
     });
     if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        await chrome.storage.local.remove(['id_token', 'access_token']);
+        chrome.runtime.sendMessage({
+          type: 'FILL_RESULT',
+          filled: localFilled,
+          total,
+          remoteFilled: 0,
+          remoteError: 'your session expired — please log in again',
+        }).catch(() => {});
+        return;
+      }
       chrome.runtime.sendMessage({
         type: 'FILL_RESULT',
         filled: localFilled,
         total,
         remoteFilled: 0,
         remoteError: "couldn't reach ApplAI for the rest",
-      });
+      }).catch(() => {});
       return;
     }
     const { fills } = await response.json();
@@ -153,7 +178,7 @@ async function handleLocalFillDone(message, tabId) {
       func: applyRemoteFillPlan,
       args: [fills],
     });
-    chrome.runtime.sendMessage({ type: 'FILL_RESULT', filled: localFilled, total, remoteFilled });
+    chrome.runtime.sendMessage({ type: 'FILL_RESULT', filled: localFilled, total, remoteFilled }).catch(() => {});
   } catch (err) {
     chrome.runtime.sendMessage({
       type: 'FILL_RESULT',
@@ -161,7 +186,7 @@ async function handleLocalFillDone(message, tabId) {
       total,
       remoteFilled: 0,
       remoteError: err.message,
-    });
+    }).catch(() => {});
   }
 }
 

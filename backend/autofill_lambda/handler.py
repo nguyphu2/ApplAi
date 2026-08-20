@@ -102,9 +102,18 @@ def handler(event, context):
             if claude_text.startswith('json'):
                 claude_text = claude_text[4:].strip()
         parsed = json.loads(claude_text)
-        fills = parsed['fills']
+        raw_fills = parsed['fills']
     except Exception as e:
         print(f'autofill failed: {e}')
         return {'statusCode': 502, 'body': json.dumps({'error': 'autofill failed'})}
+
+    known_field_ids = {f['field_id'] for f in fields}
+    fills = [
+        f for f in raw_fills
+        if isinstance(f, dict)
+        and f.get('field_id') in known_field_ids
+        and isinstance(f.get('value'), str)
+        and f['value'].strip()
+    ]
 
     return {'statusCode': 200, 'body': json.dumps({'fills': fills})}

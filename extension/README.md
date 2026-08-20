@@ -1,8 +1,13 @@
 # ApplAI Autofill
 
 Chrome extension (Manifest V3) that fills job application form fields from your saved ApplAI
-profile using a local synonym-dictionary matcher. No AI or backend call is made for unmatched
-fields. This is a skeleton, first-increment build.
+profile. It runs in two passes: a local synonym-dictionary matcher fills what it can with no
+network call at all, then whatever's still unmatched gets sent to the `applai-autofill` Lambda
+(field labels, names, placeholders, and the page title only — no full page content), which asks
+Claude to resolve what it can from your saved profile and resume text. If the `/autofill` Lambda
+and route aren't deployed, or the request fails for any reason, the extension falls back to
+showing only the local pass's results with a "couldn't reach ApplAI for the rest" message — the
+local fill is never lost or blocked on the remote pass.
 
 ## Load the extension
 
