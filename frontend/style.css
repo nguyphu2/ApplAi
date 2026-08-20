@@ -197,7 +197,7 @@ label:first-child {
   margin-top: 0;
 }
 
-input[type="text"], input[type="file"], textarea {
+input[type="text"], input[type="email"], input[type="tel"], input[type="url"], input[type="file"], textarea {
   width: 100%;
   padding: 0.65rem 0.8rem;
   border: 2px solid var(--border);
@@ -215,11 +215,11 @@ input[type="text"], input[type="file"], textarea {
   transition: border-color 0.15s ease;
 }
 
-input[type="text"]::placeholder, textarea::placeholder {
+input[type="text"]::placeholder, input[type="email"]::placeholder, input[type="tel"]::placeholder, input[type="url"]::placeholder, textarea::placeholder {
   color: var(--text-muted);
 }
 
-input[type="text"]:focus, input[type="file"]:focus, textarea:focus {
+input[type="text"]:focus, input[type="email"]:focus, input[type="tel"]:focus, input[type="url"]:focus, input[type="file"]:focus, textarea:focus {
   outline: 2px dashed var(--blue-bright);
   outline-offset: 2px;
   border-color: var(--blue);

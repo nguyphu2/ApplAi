@@ -460,6 +460,7 @@ function setProfileInfoMode(mode) {
 }
 
 function fillProfileInfoFields(profileInfo) {
+  profileInfo = profileInfo || {};
   PROFILE_INFO_FIELDS.forEach(([key, input]) => {
     input.value = profileInfo[key] || '';
   });
@@ -476,7 +477,7 @@ function readProfileInfoFields() {
 }
 
 function hasAnyProfileInfo(profileInfo) {
-  return Object.keys(profileInfo).length > 0;
+  return Object.keys(profileInfo || {}).length > 0;
 }
 
 saveProfileInfoBtn.addEventListener('click', async () => {
@@ -485,7 +486,8 @@ saveProfileInfoBtn.addEventListener('click', async () => {
     setProfileInfoMode(hasAnyProfileInfo(profileSettings.profile_info) ? 'view' : 'edit');
     profileStatus.textContent = 'Personal info saved.';
   } catch (err) {
-    profileStatus.textContent = err.message;
+    console.error('failed to save personal info:', err);
+    showComicBubble(saveProfileInfoBtn, "Couldn't save your info — try again in a moment.");
   }
 });
 
@@ -564,7 +566,8 @@ tabProfile.addEventListener('click', async () => {
     setProfileInfoMode(hasAnyProfileInfo(profileSettings.profile_info) ? 'view' : 'edit');
     profileStatus.textContent = '';
   } catch (err) {
-    profileStatus.textContent = err.message;
+    console.error('failed to load profile:', err);
+    showComicBubble(tabProfile, "Couldn't load your profile — try again in a moment.");
   }
 });
 
