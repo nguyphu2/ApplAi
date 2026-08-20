@@ -45,6 +45,12 @@ fillBtn.addEventListener('click', async () => {
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 'FILL_RESULT') {
-    statusEl.textContent = `Filled ${message.filled} of ${message.total} fields.`;
+    if (message.remoteError) {
+      statusEl.textContent = `Filled ${message.filled} fields locally; ${message.remoteError}.`;
+    } else if (message.remoteFilled) {
+      statusEl.textContent = `Filled ${message.filled + message.remoteFilled} of ${message.total} fields (${message.remoteFilled} via ApplAI).`;
+    } else {
+      statusEl.textContent = `Filled ${message.filled} of ${message.total} fields.`;
+    }
   }
 });

@@ -108,6 +108,63 @@ async function fillActiveTab() {
   });
 }
 
+function applyRemoteFillPlan(fills) {
+  let filled = 0;
+  for (const { field_id, value } of fills) {
+    const field = document.querySelector(`[data-applai-field-id="${field_id}"]`);
+    if (!field) continue;
+    field.value = value;
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+    field.removeAttribute('data-applai-field-id');
+    filled += 1;
+  }
+  return filled;
+}
+
+async function handleLocalFillDone(message, tabId) {
+  const { filled: localFilled, total, unmatched, pageUrl, pageTitle } = message;
+
+  if (!unmatched || unmatched.length === 0) {
+    chrome.runtime.sendMessage({ type: 'FILL_RESULT', filled: localFilled, total, remoteFilled: 0 });
+    return;
+  }
+
+  try {
+    const { id_token } = await chrome.storage.local.get('id_token');
+    const response = await fetch(`${API_BASE}/autofill`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${id_token}` },
+      body: JSON.stringify({ fields: unmatched, page_url: pageUrl, page_title: pageTitle }),
+    });
+    if (!response.ok) {
+      chrome.runtime.sendMessage({
+        type: 'FILL_RESULT',
+        filled: localFilled,
+        total,
+        remoteFilled: 0,
+        remoteError: "couldn't reach ApplAI for the rest",
+      });
+      return;
+    }
+    const { fills } = await response.json();
+    const [{ result: remoteFilled }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: applyRemoteFillPlan,
+      args: [fills],
+    });
+    chrome.runtime.sendMessage({ type: 'FILL_RESULT', filled: localFilled, total, remoteFilled });
+  } catch (err) {
+    chrome.runtime.sendMessage({
+      type: 'FILL_RESULT',
+      filled: localFilled,
+      total,
+      remoteFilled: 0,
+      remoteError: err.message,
+    });
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'LOGIN') {
     login()
@@ -128,5 +185,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(() => sendResponse({ ok: true }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
+  }
+  if (message.type === 'LOCAL_FILL_DONE') {
+    handleLocalFillDone(message, sender.tab.id);
+    return false;
   }
 });

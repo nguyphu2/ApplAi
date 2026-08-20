@@ -19,22 +19,44 @@
   const fields = Array.from(document.querySelectorAll(SELECTOR));
 
   let filled = 0;
+  const unmatched = [];
+  let nextFieldId = 0;
+
   for (const field of fields) {
+    if (field.value.trim()) {
+      continue;
+    }
     const descriptor = {
       label: getLabelText(field),
       name: field.name || '',
       id: field.id || '',
       placeholder: field.placeholder || '',
     };
-    if (field.value.trim()) {
-      continue;
-    }
     const match = matchField(descriptor, profile);
     if (match) {
       fillField(field, match.value);
       filled += 1;
+    } else {
+      const fieldId = 'applai-field-' + nextFieldId;
+      nextFieldId += 1;
+      field.setAttribute('data-applai-field-id', fieldId);
+      unmatched.push({
+        field_id: fieldId,
+        label: descriptor.label,
+        name: descriptor.name,
+        id: descriptor.id,
+        placeholder: descriptor.placeholder,
+        type: field.tagName === 'TEXTAREA' ? 'textarea' : field.type,
+      });
     }
   }
 
-  chrome.runtime.sendMessage({ type: 'FILL_RESULT', filled, total: fields.length });
+  chrome.runtime.sendMessage({
+    type: 'LOCAL_FILL_DONE',
+    filled,
+    total: fields.length,
+    unmatched,
+    pageUrl: window.location.href,
+    pageTitle: document.title,
+  });
 })();
