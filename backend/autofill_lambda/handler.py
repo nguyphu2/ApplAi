@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 load_dotenv('.env')
 TABLE_NAME = os.getenv('SETTINGS_TABLE_NAME')
 CLAUDE_MODEL_ID = 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
-MAX_FIELDS = 30
+MAX_FIELDS = 60
 
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(TABLE_NAME)
@@ -73,8 +73,7 @@ def handler(event, context):
     if not fields:
         return {'statusCode': 200, 'body': json.dumps({'fills': []})}
 
-    if len(fields) > MAX_FIELDS:
-        return {'statusCode': 400, 'body': json.dumps({'error': f'too many fields, max {MAX_FIELDS}'})}
+    fields = fields[:MAX_FIELDS]
 
     try:
         response = table.get_item(Key={'user_id': user_id})

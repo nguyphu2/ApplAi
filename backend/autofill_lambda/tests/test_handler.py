@@ -29,14 +29,24 @@ def test_returns_empty_fills_when_no_fields_given(handler_module):
     assert json.loads(response['body']) == {'fills': []}
 
 
-def test_returns_400_when_too_many_fields(handler_module):
+def test_truncates_to_max_fields_instead_of_rejecting(handler_module, monkeypatch):
+    handler_module.table.put_item(Item={'user_id': 'user-123', 'profile_info': {'full_name': 'Ada Lovelace'}})
+    invoke_model = MagicMock(return_value=make_bedrock_response([]))
+    monkeypatch.setattr(handler_module, 'bedrock_runtime', MagicMock(invoke_model=invoke_model))
+
     too_many = [
         {'field_id': f'f{i}', 'label': '', 'name': '', 'id': '', 'placeholder': '', 'type': 'text'}
-        for i in range(handler_module.MAX_FIELDS + 1)
+        for i in range(handler_module.MAX_FIELDS + 10)
     ]
     response = handler_module.handler(make_event(body={'fields': too_many, 'page_title': ''}), None)
 
-    assert response['statusCode'] == 400
+    assert response['statusCode'] == 200
+    sent_prompt = json.loads(invoke_model.call_args.kwargs['body'])['messages'][0]['content']
+    fields_line = next(line for line in sent_prompt.split('\n') if line.startswith('['))
+    sent_fields = json.loads(fields_line)
+    assert len(sent_fields) == handler_module.MAX_FIELDS
+    assert sent_fields[0]['field_id'] == 'f0'
+    assert sent_fields[-1]['field_id'] == f'f{handler_module.MAX_FIELDS - 1}'
 
 
 def test_returns_empty_fills_when_user_has_no_profile_data(handler_module, monkeypatch):
