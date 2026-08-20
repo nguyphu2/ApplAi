@@ -687,6 +687,15 @@ form button[type="submit"] {
   flex: 1;
 }
 
+a.resume-filename {
+  color: var(--blue-bright);
+  text-decoration: none;
+}
+
+a.resume-filename:hover {
+  text-decoration: underline;
+}
+
 .resume-row .resume-uploaded-at {
   flex-shrink: 0;
   color: var(--text-muted);

@@ -385,7 +385,9 @@ function renderResumeList() {
     resumeListEl.innerHTML = resumes.map((r) => `
       <div class="resume-row" data-resume-id="${r.id}">
         <input type="checkbox" class="resume-checkbox" ${active_resume_ids.includes(r.id) ? 'checked' : ''} />
-        <span class="resume-filename">${r.filename}</span>
+        ${r.pdf_url
+          ? `<a class="resume-filename" href="${r.pdf_url}" target="_blank" rel="noopener">${r.filename}</a>`
+          : `<span class="resume-filename">${r.filename}</span>`}
         <span class="resume-uploaded-at">${new Date(r.uploaded_at).toLocaleDateString()}</span>
         <button type="button" class="secondary resume-remove-btn">Remove</button>
       </div>

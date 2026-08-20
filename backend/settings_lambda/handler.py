@@ -22,13 +22,20 @@ from textract import extract_text_from_pdf
 
 load_dotenv('.env')
 TABLE_NAME = os.getenv('SETTINGS_TABLE_NAME')
+BUCKET_NAME = os.getenv('BUCKET_NAME')
+RESUME_URL_EXPIRY_SECONDS = 900
 
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(TABLE_NAME)
+s3_client = boto3.client('s3')
 
 
 def get_user_id(event):
     return event['requestContext']['authorizer']['jwt']['claims']['sub']
+
+
+def resume_pdf_key(user_id, resume_id):
+    return f'resumes/{user_id}/{resume_id}.pdf'
 
 
 def get_item(user_id):
@@ -43,13 +50,33 @@ def get_item(user_id):
     }
 
 
+def with_resume_urls(user_id, item):
+    """Adds a short-lived presigned S3 URL to each resume for the API
+    response only - never persisted to DynamoDB, since the URL expires and
+    the S3 key is already fully derivable from user_id + resume id."""
+    return {
+        **item,
+        'resumes': [
+            {
+                **r,
+                'pdf_url': s3_client.generate_presigned_url(
+                    'get_object',
+                    Params={'Bucket': BUCKET_NAME, 'Key': resume_pdf_key(user_id, r['id'])},
+                    ExpiresIn=RESUME_URL_EXPIRY_SECONDS,
+                ),
+            }
+            for r in item['resumes']
+        ],
+    }
+
+
 def handler(event, context):
     user_id = get_user_id(event)
     method = event['requestContext']['http']['method']
 
     if method == 'GET':
         try:
-            return {'statusCode': 200, 'body': json.dumps(get_item(user_id))}
+            return {'statusCode': 200, 'body': json.dumps(with_resume_urls(user_id, get_item(user_id)))}
         except ClientError as e:
             print(f'DynamoDB get_item failed: {e}')
             return {'statusCode': 502, 'body': json.dumps({'error': 'settings service failed'})}
@@ -76,8 +103,15 @@ def handler(event, context):
                 except Exception as e:
                     print(f'could not read resume PDF: {e}')
                     return {'statusCode': 422, 'body': json.dumps({'error': 'could not read PDF'})}
+                resume_id = str(uuid.uuid4())
+                s3_client.put_object(
+                    Bucket=BUCKET_NAME,
+                    Key=resume_pdf_key(user_id, resume_id),
+                    Body=pdf_bytes,
+                    ContentType='application/pdf',
+                )
                 item['resumes'].append({
-                    'id': str(uuid.uuid4()),
+                    'id': resume_id,
                     'filename': add_resume.get('filename', 'resume.pdf'),
                     'text': text,
                     'uploaded_at': datetime.now(timezone.utc).isoformat(),
@@ -89,6 +123,10 @@ def handler(event, context):
                 item['active_resume_ids'] = [
                     rid for rid in item['active_resume_ids'] if rid != remove_resume_id
                 ]
+                try:
+                    s3_client.delete_object(Bucket=BUCKET_NAME, Key=resume_pdf_key(user_id, remove_resume_id))
+                except ClientError as e:
+                    print(f'could not delete resume PDF from S3: {e}')
 
             if 'active_resume_ids' in body:
                 valid_ids = {r['id'] for r in item['resumes']}
@@ -97,7 +135,7 @@ def handler(event, context):
                 ]
 
             table.put_item(Item={'user_id': user_id, **item})
-            return {'statusCode': 200, 'body': json.dumps(item)}
+            return {'statusCode': 200, 'body': json.dumps(with_resume_urls(user_id, item))}
         except ClientError as e:
             print(f'DynamoDB put_item failed: {e}')
             return {'statusCode': 502, 'body': json.dumps({'error': 'settings service failed'})}

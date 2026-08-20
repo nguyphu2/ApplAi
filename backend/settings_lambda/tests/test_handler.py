@@ -1,4 +1,8 @@
+import base64
 import json
+
+import pytest
+from botocore.exceptions import ClientError
 
 
 def make_event(method, user_id='user-123', body=None):
@@ -65,3 +69,59 @@ def test_profile_info_is_scoped_per_user(handler_module):
 
     get_response = handler_module.handler(make_event('GET', user_id='user-b'), None)
     assert json.loads(get_response['body'])['profile_info'] == {}
+
+
+def test_add_resume_uploads_pdf_to_s3_and_returns_a_working_url(handler_module, monkeypatch):
+    monkeypatch.setattr(handler_module, 'extract_text_from_pdf', lambda pdf_bytes: 'extracted text')
+    pdf_base64 = base64.b64encode(b'%PDF-1.4 fake pdf bytes').decode('utf-8')
+
+    put_response = handler_module.handler(
+        make_event('PUT', body={'add_resume': {'filename': 'resume.pdf', 'resume_pdf_base64': pdf_base64}}),
+        None,
+    )
+
+    assert put_response['statusCode'] == 200
+    body = json.loads(put_response['body'])
+    assert len(body['resumes']) == 1
+    resume = body['resumes'][0]
+    assert resume['filename'] == 'resume.pdf'
+    assert resume['text'] == 'extracted text'
+    assert resume['pdf_url'].startswith('https://')
+
+    stored_object = handler_module.s3_client.get_object(
+        Bucket=handler_module.BUCKET_NAME,
+        Key=handler_module.resume_pdf_key('user-123', resume['id']),
+    )
+    assert stored_object['Body'].read() == b'%PDF-1.4 fake pdf bytes'
+
+
+def test_pdf_url_is_not_persisted_to_dynamodb(handler_module, monkeypatch):
+    monkeypatch.setattr(handler_module, 'extract_text_from_pdf', lambda pdf_bytes: 'extracted text')
+    pdf_base64 = base64.b64encode(b'fake pdf').decode('utf-8')
+
+    handler_module.handler(
+        make_event('PUT', body={'add_resume': {'filename': 'resume.pdf', 'resume_pdf_base64': pdf_base64}}),
+        None,
+    )
+
+    raw_item = handler_module.table.get_item(Key={'user_id': 'user-123'})['Item']
+    assert 'pdf_url' not in raw_item['resumes'][0]
+
+
+def test_remove_resume_deletes_the_pdf_from_s3(handler_module, monkeypatch):
+    monkeypatch.setattr(handler_module, 'extract_text_from_pdf', lambda pdf_bytes: 'extracted text')
+    pdf_base64 = base64.b64encode(b'fake pdf').decode('utf-8')
+
+    put_response = handler_module.handler(
+        make_event('PUT', body={'add_resume': {'filename': 'resume.pdf', 'resume_pdf_base64': pdf_base64}}),
+        None,
+    )
+    resume_id = json.loads(put_response['body'])['resumes'][0]['id']
+
+    handler_module.handler(make_event('PUT', body={'remove_resume_id': resume_id}), None)
+
+    with pytest.raises(ClientError):
+        handler_module.s3_client.get_object(
+            Bucket=handler_module.BUCKET_NAME,
+            Key=handler_module.resume_pdf_key('user-123', resume_id),
+        )
