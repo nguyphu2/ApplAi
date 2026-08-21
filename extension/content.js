@@ -43,7 +43,20 @@
   }
 
   function isRequiredField(input, labelText) {
-    return input.required || input.getAttribute('aria-required') === 'true' || labelText.includes('*');
+    if (input.required || input.getAttribute('aria-required') === 'true' || labelText.includes('*')) {
+      return true;
+    }
+    // Some ATS platforms (e.g. Paylocity) mark a required field only via a
+    // CSS class on its immediate wrapper (e.g. "form-required") and/or
+    // literal " (required)" text in a sibling label, with none of the
+    // standard HTML signals above ever set. Scoped to the immediate parent
+    // only, so this can't false-positive on an unrelated ancestor further
+    // up the page.
+    const wrapper = input.parentElement;
+    if (!wrapper) {
+      return false;
+    }
+    return /required/i.test(wrapper.className) || /\brequired\b/i.test(wrapper.textContent);
   }
 
   function fillField(input, value) {
