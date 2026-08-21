@@ -22,8 +22,19 @@
     return EXPANDABLE_BUTTON_PHRASES.some((phrase) => text === phrase || text.includes(phrase));
   }
 
+  // Persisted on window (survives across separate Fill clicks on the same
+  // page load, since content.js is re-injected fresh each time but window
+  // state is not) so a repeat Fill click retries whatever's already been
+  // revealed instead of adding another blank entry each time.
+  window.__applaiExpandedButtons = window.__applaiExpandedButtons || new Set();
+
   const expandButtons = Array.from(document.querySelectorAll('button')).filter(isExpandableButton);
   for (const button of expandButtons) {
+    const key = button.textContent.trim().toLowerCase();
+    if (window.__applaiExpandedButtons.has(key)) {
+      continue;
+    }
+    window.__applaiExpandedButtons.add(key);
     button.click();
     await new Promise((resolve) => setTimeout(resolve, 300));
   }

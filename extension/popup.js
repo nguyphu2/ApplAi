@@ -43,6 +43,7 @@ function startFillProgress() {
 }
 
 function finishFillProgress(message) {
+  fillProgressEl.classList.remove('hidden');
   fillStateIcon.classList.add('done');
   fillStateIcon.textContent = '✓';
   fillStateLabel.textContent = message.remoteError ? 'Filled what it could' : 'Done';
@@ -52,6 +53,7 @@ function finishFillProgress(message) {
   setBar(requiredProgressTrack, requiredProgressFill, requiredProgressCount, message.requiredFilled || 0, message.requiredTotal || 0);
 
   fillBtn.disabled = false;
+  statusEl.textContent = message.remoteError ? `${message.filled} filled locally; ${message.remoteError}.` : '';
 }
 
 loginBtn.addEventListener('click', async () => {
@@ -75,6 +77,12 @@ logoutBtn.addEventListener('click', async () => {
 (async function init() {
   const { loggedIn } = await sendMessage({ type: 'CHECK_LOGIN' });
   setLoggedInUI(loggedIn);
+  if (loggedIn) {
+    const { lastFillResult } = await chrome.storage.local.get('lastFillResult');
+    if (lastFillResult) {
+      finishFillProgress(lastFillResult);
+    }
+  }
 })();
 
 fillBtn.addEventListener('click', async () => {
@@ -91,10 +99,5 @@ fillBtn.addEventListener('click', async () => {
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 'FILL_RESULT') {
     finishFillProgress(message);
-    if (message.remoteError) {
-      statusEl.textContent = `${message.filled} filled locally; ${message.remoteError}.`;
-    } else {
-      statusEl.textContent = '';
-    }
   }
 });

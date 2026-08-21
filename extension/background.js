@@ -63,7 +63,7 @@ async function login() {
 }
 
 async function logout() {
-  await chrome.storage.local.remove(['id_token', 'access_token']);
+  await chrome.storage.local.remove(['id_token', 'access_token', 'lastFillResult']);
 }
 
 async function isLoggedIn() {
@@ -130,32 +130,33 @@ function applyRemoteFillPlan(fills) {
   return { filled, requiredFilled };
 }
 
+async function sendFillResult(payload) {
+  // Persisted so the popup can restore the last result if it's reopened
+  // after being closed - Chrome destroys the popup document entirely on
+  // close, so without this every reopen would start blank regardless of
+  // whether a fill had actually just finished.
+  await chrome.storage.local.set({ lastFillResult: payload });
+  chrome.runtime.sendMessage({ type: 'FILL_RESULT', ...payload }).catch(() => {});
+}
+
 async function handleLocalFillDone(message, tabId) {
   const { filled: localFilled, total, requiredTotal, requiredFilled: localRequiredFilled, unmatched, pageUrl, pageTitle } = message;
 
   if (!unmatched || unmatched.length === 0) {
-    chrome.runtime.sendMessage({
-      type: 'FILL_RESULT',
-      filled: localFilled,
-      total,
-      remoteFilled: 0,
-      requiredTotal,
-      requiredFilled: localRequiredFilled,
-    }).catch(() => {});
+    await sendFillResult({ filled: localFilled, total, remoteFilled: 0, requiredTotal, requiredFilled: localRequiredFilled });
     return;
   }
 
   const { id_token } = await chrome.storage.local.get('id_token');
   if (!id_token) {
-    chrome.runtime.sendMessage({
-      type: 'FILL_RESULT',
+    await sendFillResult({
       filled: localFilled,
       total,
       remoteFilled: 0,
       requiredTotal,
       requiredFilled: localRequiredFilled,
       remoteError: 'your session expired — please log in again',
-    }).catch(() => {});
+    });
     return;
   }
 
@@ -168,26 +169,24 @@ async function handleLocalFillDone(message, tabId) {
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
         await chrome.storage.local.remove(['id_token', 'access_token']);
-        chrome.runtime.sendMessage({
-          type: 'FILL_RESULT',
+        await sendFillResult({
           filled: localFilled,
           total,
           remoteFilled: 0,
           requiredTotal,
           requiredFilled: localRequiredFilled,
           remoteError: 'your session expired — please log in again',
-        }).catch(() => {});
+        });
         return;
       }
-      chrome.runtime.sendMessage({
-        type: 'FILL_RESULT',
+      await sendFillResult({
         filled: localFilled,
         total,
         remoteFilled: 0,
         requiredTotal,
         requiredFilled: localRequiredFilled,
         remoteError: "couldn't reach ApplAI for the rest",
-      }).catch(() => {});
+      });
       return;
     }
     const { fills } = await response.json();
@@ -196,24 +195,22 @@ async function handleLocalFillDone(message, tabId) {
       func: applyRemoteFillPlan,
       args: [fills],
     });
-    chrome.runtime.sendMessage({
-      type: 'FILL_RESULT',
+    await sendFillResult({
       filled: localFilled,
       total,
       remoteFilled: result.filled,
       requiredTotal,
       requiredFilled: localRequiredFilled + result.requiredFilled,
-    }).catch(() => {});
+    });
   } catch (err) {
-    chrome.runtime.sendMessage({
-      type: 'FILL_RESULT',
+    await sendFillResult({
       filled: localFilled,
       total,
       remoteFilled: 0,
       requiredTotal,
       requiredFilled: localRequiredFilled,
       remoteError: err.message,
-    }).catch(() => {});
+    });
   }
 }
 
