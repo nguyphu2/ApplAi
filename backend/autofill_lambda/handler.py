@@ -50,13 +50,20 @@ Resume / skills text:
 
 Unmatched form fields (each has a field_id, label, name, id, placeholder,
 type, and required - a boolean indicating whether the form marks the
-field as required):
+field as required). A field with type "select" is a dropdown and also
+has an "options" list of {{"value": "...", "text": "..."}} pairs - it can
+only be set to one of those exact "value" strings, never free text:
 {fields_json}
 
 For each field, decide if the structured profile or resume/skills text
 above contains a clear, confident answer. Fields marked required: true
 matter more - make an extra effort to find a defensible answer for them
 from the profile or resume, but still never guess wildly on any field.
+For a "select" field, return the "value" of whichever option best matches
+(e.g. a state option list may use abbreviations or full names, or a
+school-type/degree-type list may use different wording than the resume -
+match on meaning) - never return text that isn't one of the listed values,
+and omit the field entirely if none of its options are a reasonable match.
 Respond with ONLY a JSON object in this exact shape, no other text before
 or after it:
 {{"fills": [{{"field_id": "...", "value": "..."}}]}}
@@ -111,13 +118,19 @@ def handler(event, context):
         print(f'autofill failed: {e}')
         return {'statusCode': 502, 'body': json.dumps({'error': 'autofill failed'})}
 
-    known_field_ids = {f['field_id'] for f in fields}
-    fills = [
-        f for f in raw_fills
-        if isinstance(f, dict)
-        and f.get('field_id') in known_field_ids
-        and isinstance(f.get('value'), str)
-        and f['value'].strip()
-    ]
+    fields_by_id = {f['field_id']: f for f in fields}
+    fills = []
+    for f in raw_fills:
+        if not isinstance(f, dict):
+            continue
+        field = fields_by_id.get(f.get('field_id'))
+        value = f.get('value')
+        if field is None or not isinstance(value, str) or not value.strip():
+            continue
+        if field.get('type') == 'select':
+            option_values = {opt.get('value') for opt in field.get('options', [])}
+            if value not in option_values:
+                continue
+        fills.append(f)
 
     return {'statusCode': 200, 'body': json.dumps({'fills': fills})}

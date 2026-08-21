@@ -94,6 +94,29 @@ def test_resolves_fields_from_resume_text_via_bedrock(handler_module, monkeypatc
     assert 'Company Name' in sent_prompt
 
 
+def test_select_field_only_accepts_a_value_from_its_own_options(handler_module, monkeypatch):
+    handler_module.table.put_item(Item={
+        'user_id': 'user-123',
+        'profile_info': {'state': 'Oregon'},
+    })
+    invoke_model = MagicMock(return_value=make_bedrock_response([
+        {'field_id': 'f0', 'value': 'OR'},
+        {'field_id': 'f0', 'value': 'NOT_A_REAL_OPTION'},
+    ]))
+    monkeypatch.setattr(handler_module, 'bedrock_runtime', MagicMock(invoke_model=invoke_model))
+
+    fields = [{
+        'field_id': 'f0', 'label': 'State', 'name': '', 'id': '', 'placeholder': '',
+        'type': 'select', 'required': False,
+        'options': [{'value': 'OR', 'text': 'Oregon'}, {'value': 'WA', 'text': 'Washington'}],
+    }]
+    response = handler_module.handler(make_event(body={'fields': fields, 'page_title': ''}), None)
+
+    assert response['statusCode'] == 200
+    body = json.loads(response['body'])
+    assert body == {'fills': [{'field_id': 'f0', 'value': 'OR'}]}
+
+
 def test_returns_502_when_bedrock_call_fails(handler_module, monkeypatch):
     handler_module.table.put_item(Item={
         'user_id': 'user-123',

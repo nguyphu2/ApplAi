@@ -76,8 +76,20 @@
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  // Option value/text pairs vary too wildly across ATS platforms (state
+  // code vs. full name, numeric IDs for a school-type dropdown) for the
+  // local synonym matcher to safely guess - every <select> goes to Claude,
+  // which gets the actual option list and picks a value from it rather
+  // than inventing free text.
+  function getSelectOptions(select) {
+    return Array.from(select.options)
+      .filter((opt) => opt.value !== '')
+      .map((opt) => ({ value: opt.value, text: opt.textContent.trim() }));
+  }
+
   const SELECTOR = 'input[type="text"], input[type="email"], input[type="tel"], input[type="url"], input[type="number"], input:not([type]), textarea';
   const fields = Array.from(document.querySelectorAll(SELECTOR));
+  const selectFields = Array.from(document.querySelectorAll('select'));
 
   let filled = 0;
   let requiredTotal = 0;
@@ -127,10 +139,38 @@
     }
   }
 
+  for (const select of selectFields) {
+    const labelText = getLabelText(select);
+    const required = isRequiredField(select, labelText);
+    if (required) {
+      requiredTotal += 1;
+    }
+
+    if (select.value) {
+      if (required) {
+        requiredFilled += 1;
+      }
+      continue;
+    }
+    const fieldId = 'applai-field-' + runId + '-' + nextFieldId;
+    nextFieldId += 1;
+    select.setAttribute('data-applai-field-id', fieldId);
+    unmatched.push({
+      field_id: fieldId,
+      label: labelText,
+      name: select.name || '',
+      id: select.id || '',
+      placeholder: '',
+      type: 'select',
+      required,
+      options: getSelectOptions(select),
+    });
+  }
+
   chrome.runtime.sendMessage({
     type: 'LOCAL_FILL_DONE',
     filled,
-    total: fields.length,
+    total: fields.length + selectFields.length,
     requiredTotal,
     requiredFilled,
     unmatched,
