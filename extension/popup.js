@@ -78,8 +78,15 @@ logoutBtn.addEventListener('click', async () => {
   const { loggedIn } = await sendMessage({ type: 'CHECK_LOGIN' });
   setLoggedInUI(loggedIn);
   if (loggedIn) {
-    const { lastFillResult } = await chrome.storage.local.get('lastFillResult');
-    if (lastFillResult) {
+    const { fillInProgress, lastFillResult } = await chrome.storage.local.get(['fillInProgress', 'lastFillResult']);
+    if (fillInProgress) {
+      // A fill is still waiting on content.js/the /autofill round-trip
+      // from before this popup instance existed - show the same live
+      // state a fresh click would, and leave the button disabled so a
+      // second fill can't be started on top of it (see the FILL handler
+      // in background.js for what that race does).
+      startFillProgress();
+    } else if (lastFillResult) {
       finishFillProgress(lastFillResult);
     }
   }

@@ -63,7 +63,7 @@ async function login() {
 }
 
 async function logout() {
-  await chrome.storage.local.remove(['id_token', 'access_token', 'lastFillResult']);
+  await chrome.storage.local.remove(['id_token', 'access_token', 'lastFillResult', 'fillInProgress']);
 }
 
 async function isLoggedIn() {
@@ -134,8 +134,10 @@ async function sendFillResult(payload) {
   // Persisted so the popup can restore the last result if it's reopened
   // after being closed - Chrome destroys the popup document entirely on
   // close, so without this every reopen would start blank regardless of
-  // whether a fill had actually just finished.
-  await chrome.storage.local.set({ lastFillResult: payload });
+  // whether a fill had actually just finished. Clearing fillInProgress
+  // here too, since every terminal path of a fill goes through this one
+  // function - see the FILL handler below for why that flag exists.
+  await chrome.storage.local.set({ lastFillResult: payload, fillInProgress: false });
   chrome.runtime.sendMessage({ type: 'FILL_RESULT', ...payload }).catch(() => {});
 }
 
@@ -230,9 +232,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === 'FILL') {
-    fillActiveTab()
-      .then(() => sendResponse({ ok: true }))
-      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    // A fill in flight is still waiting on content.js's local pass and/or
+    // the /autofill round-trip when this fires - starting a second one
+    // reinjects content.js, which clears every data-applai-field-id tag
+    // unconditionally, so the first fill's still-pending remote response
+    // arrives to find none of its target fields exist anymore and silently
+    // drops all of them. This is now reachable in practice: closing the
+    // popup no longer discards its state (see sendFillResult), so it's
+    // easy to close it mid-fill, reopen, and click Fill again before the
+    // first one has finished.
+    chrome.storage.local.get('fillInProgress').then(({ fillInProgress }) => {
+      if (fillInProgress) {
+        sendResponse({ ok: false, error: 'Already filling this page - please wait for it to finish.' });
+        return;
+      }
+      chrome.storage.local.set({ fillInProgress: true }).then(() => {
+        fillActiveTab()
+          .then(() => sendResponse({ ok: true }))
+          .catch((err) => {
+            chrome.storage.local.set({ fillInProgress: false });
+            sendResponse({ ok: false, error: err.message });
+          });
+      });
+    });
     return true;
   }
   if (message.type === 'LOCAL_FILL_DONE') {
