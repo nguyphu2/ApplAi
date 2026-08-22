@@ -154,22 +154,29 @@ async function fillActiveTab() {
   });
 }
 
-async function fillComboboxOption(combo, value) {
-  combo.click();
-  await new Promise((resolve) => setTimeout(resolve, 200));
-  const listboxId = combo.getAttribute('aria-owns') || combo.getAttribute('aria-controls');
-  const listbox = listboxId ? document.getElementById(listboxId) : null;
-  const optionEls = listbox ? Array.from(listbox.querySelectorAll('[role="option"]')) : [];
-  const match = optionEls.find((opt) => opt.textContent.trim() === value);
-  if (match) {
-    match.click();
-    return true;
-  }
-  combo.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  return false;
-}
-
 async function applyRemoteFillPlan(fills) {
+  // executeScript({ func: applyRemoteFillPlan }) only serializes and
+  // injects this one function's source into the page - a sibling
+  // top-level function in this file (e.g. a module-level
+  // fillComboboxOption) would not exist in that injected context and
+  // calling it would throw a ReferenceError, aborting the whole loop
+  // (including every field still queued after the one that hit it).
+  // Nested here so it travels with applyRemoteFillPlan's own source.
+  async function fillComboboxOption(combo, value) {
+    combo.click();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const listboxId = combo.getAttribute('aria-owns') || combo.getAttribute('aria-controls');
+    const listbox = listboxId ? document.getElementById(listboxId) : null;
+    const optionEls = listbox ? Array.from(listbox.querySelectorAll('[role="option"]')) : [];
+    const match = optionEls.find((opt) => opt.textContent.trim() === value);
+    if (match) {
+      match.click();
+      return true;
+    }
+    combo.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return false;
+  }
+
   let filled = 0;
   let requiredFilled = 0;
   for (const { field_id, value } of fills) {
