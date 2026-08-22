@@ -24,19 +24,36 @@
 
   // Persisted on window (survives across separate Fill clicks on the same
   // page load, since content.js is re-injected fresh each time but window
-  // state is not) so a repeat Fill click retries whatever's already been
-  // revealed instead of adding another blank entry each time.
-  window.__applaiExpandedButtons = window.__applaiExpandedButtons || new Set();
+  // state is not) so a repeat Fill click doesn't keep adding more blank
+  // entries on top of ones already revealed.
+  window.__applaiExpandButtonClicks = window.__applaiExpandButtonClicks || {};
 
-  const expandButtons = Array.from(document.querySelectorAll('button')).filter(isExpandableButton);
-  for (const button of expandButtons) {
-    const key = button.textContent.trim().toLowerCase();
-    if (window.__applaiExpandedButtons.has(key)) {
-      continue;
+  // A resume with 2 degrees or 3 past jobs needs 2-3 blocks, not 1 - and
+  // some sites only reveal the button for the *next* entry ("Add another
+  // education") after the previous one's already been clicked, so a
+  // single snapshot-and-click pass never sees it. Re-querying after each
+  // click, and allowing the same button text to be clicked multiple times
+  // (capped, so this can't loop forever or over-add on a plain resume),
+  // covers both "same button repeatable" and "a new button appears" sites.
+  const MAX_CLICKS_PER_PHRASE = 4;
+  let addedBlock = true;
+  let safety = 0;
+  while (addedBlock && safety < 20) {
+    addedBlock = false;
+    safety += 1;
+    const expandButtons = Array.from(document.querySelectorAll('button')).filter(isExpandableButton);
+    for (const button of expandButtons) {
+      const key = button.textContent.trim().toLowerCase();
+      const clicks = window.__applaiExpandButtonClicks[key] || 0;
+      if (clicks >= MAX_CLICKS_PER_PHRASE) {
+        continue;
+      }
+      window.__applaiExpandButtonClicks[key] = clicks + 1;
+      button.click();
+      addedBlock = true;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      break; // the DOM likely just changed - re-query from scratch
     }
-    window.__applaiExpandedButtons.add(key);
-    button.click();
-    await new Promise((resolve) => setTimeout(resolve, 300));
   }
 
   function getLabelText(input) {

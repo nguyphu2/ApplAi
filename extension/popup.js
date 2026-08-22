@@ -18,6 +18,13 @@ function sendMessage(message) {
   return new Promise((resolve) => chrome.runtime.sendMessage(message, resolve));
 }
 
+async function getCurrentTabId() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab ? tab.id : null;
+}
+
+let currentTabId = null;
+
 function setLoggedInUI(loggedIn, isJobPage) {
   loginBtn.classList.toggle('hidden', loggedIn);
   logoutBtn.classList.toggle('hidden', !loggedIn);
@@ -78,20 +85,24 @@ logoutBtn.addEventListener('click', async () => {
 });
 
 (async function init() {
+  currentTabId = await getCurrentTabId();
   const { loggedIn } = await sendMessage({ type: 'CHECK_LOGIN' });
   const isJobPage = loggedIn ? (await sendMessage({ type: 'CHECK_JOB_PAGE' })).isJobPage : false;
   setLoggedInUI(loggedIn, isJobPage);
-  if (loggedIn) {
-    const { fillInProgress, lastFillResult } = await chrome.storage.local.get(['fillInProgress', 'lastFillResult']);
-    if (fillInProgress) {
+  // Progress is per-tab and only meaningful on a job application page -
+  // an old result from a job page you've since navigated away from
+  // shouldn't linger and show on whatever page you're on now.
+  if (loggedIn && isJobPage && currentTabId != null) {
+    const { fillInProgressTabs, fillResults } = await chrome.storage.local.get(['fillInProgressTabs', 'fillResults']);
+    if (fillInProgressTabs && fillInProgressTabs[currentTabId]) {
       // A fill is still waiting on content.js/the /autofill round-trip
       // from before this popup instance existed - show the same live
       // state a fresh click would, and leave the button disabled so a
       // second fill can't be started on top of it (see the FILL handler
       // in background.js for what that race does).
       startFillProgress();
-    } else if (lastFillResult) {
-      finishFillProgress(lastFillResult);
+    } else if (fillResults && fillResults[currentTabId]) {
+      finishFillProgress(fillResults[currentTabId]);
     }
   }
 })();
@@ -108,7 +119,7 @@ fillBtn.addEventListener('click', async () => {
 });
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === 'FILL_RESULT') {
+  if (message.type === 'FILL_RESULT' && message.tabId === currentTabId) {
     finishFillProgress(message);
   }
 });

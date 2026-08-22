@@ -63,7 +63,10 @@ async function login() {
 }
 
 async function logout() {
-  await chrome.storage.local.remove(['id_token', 'access_token', 'lastFillResult', 'fillInProgress']);
+  // fillResults/fillInProgressTabs are keyed per-tab (see sendFillResult
+  // below) so a wholesale clear on logout, rather than a single key
+  // removal, is what actually resets every open tab's state.
+  await chrome.storage.local.remove(['id_token', 'access_token', 'fillResults', 'fillInProgressTabs']);
 }
 
 async function isLoggedIn() {
@@ -136,20 +139,16 @@ async function checkJobApplicationPage() {
   }
 }
 
-async function fillActiveTab() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) {
-    throw new Error('no active tab');
-  }
+async function fillActiveTab(tabId) {
   const profile = await getProfile();
 
   await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
+    target: { tabId },
     func: (p) => { window.__applaiProfile = p; },
     args: [profile],
   });
   await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
+    target: { tabId },
     files: ['matcher.js', 'content.js'],
   });
 }
@@ -204,28 +203,33 @@ async function applyRemoteFillPlan(fills) {
   return { filled, requiredFilled };
 }
 
-async function sendFillResult(payload) {
-  // Persisted so the popup can restore the last result if it's reopened
-  // after being closed - Chrome destroys the popup document entirely on
-  // close, so without this every reopen would start blank regardless of
-  // whether a fill had actually just finished. Clearing fillInProgress
-  // here too, since every terminal path of a fill goes through this one
-  // function - see the FILL handler below for why that flag exists.
-  await chrome.storage.local.set({ lastFillResult: payload, fillInProgress: false });
-  chrome.runtime.sendMessage({ type: 'FILL_RESULT', ...payload }).catch(() => {});
+async function sendFillResult(tabId, payload) {
+  // Keyed per-tab so switching between two job application tabs shows
+  // each one's own progress instead of whichever tab was filled last -
+  // Chrome destroys the popup document on close, so without persisting
+  // this at all, every reopen would start blank regardless of whether a
+  // fill had actually just finished. Clearing this tab's fillInProgress
+  // entry here too, since every terminal path of a fill goes through this
+  // one function - see the FILL handler below for why that flag exists.
+  const { fillResults, fillInProgressTabs } = await chrome.storage.local.get(['fillResults', 'fillInProgressTabs']);
+  const nextResults = { ...fillResults, [tabId]: payload };
+  const nextInProgress = { ...fillInProgressTabs };
+  delete nextInProgress[tabId];
+  await chrome.storage.local.set({ fillResults: nextResults, fillInProgressTabs: nextInProgress });
+  chrome.runtime.sendMessage({ type: 'FILL_RESULT', tabId, ...payload }).catch(() => {});
 }
 
 async function handleLocalFillDone(message, tabId) {
   const { filled: localFilled, total, requiredTotal, requiredFilled: localRequiredFilled, unmatched, pageUrl, pageTitle } = message;
 
   if (!unmatched || unmatched.length === 0) {
-    await sendFillResult({ filled: localFilled, total, remoteFilled: 0, requiredTotal, requiredFilled: localRequiredFilled });
+    await sendFillResult(tabId, { filled: localFilled, total, remoteFilled: 0, requiredTotal, requiredFilled: localRequiredFilled });
     return;
   }
 
   const { id_token } = await chrome.storage.local.get('id_token');
   if (!id_token) {
-    await sendFillResult({
+    await sendFillResult(tabId, {
       filled: localFilled,
       total,
       remoteFilled: 0,
@@ -245,7 +249,7 @@ async function handleLocalFillDone(message, tabId) {
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
         await chrome.storage.local.remove(['id_token', 'access_token']);
-        await sendFillResult({
+        await sendFillResult(tabId, {
           filled: localFilled,
           total,
           remoteFilled: 0,
@@ -255,7 +259,7 @@ async function handleLocalFillDone(message, tabId) {
         });
         return;
       }
-      await sendFillResult({
+      await sendFillResult(tabId, {
         filled: localFilled,
         total,
         remoteFilled: 0,
@@ -271,7 +275,7 @@ async function handleLocalFillDone(message, tabId) {
       func: applyRemoteFillPlan,
       args: [fills],
     });
-    await sendFillResult({
+    await sendFillResult(tabId, {
       filled: localFilled,
       total,
       remoteFilled: result.filled,
@@ -279,7 +283,7 @@ async function handleLocalFillDone(message, tabId) {
       requiredFilled: localRequiredFilled + result.requiredFilled,
     });
   } catch (err) {
-    await sendFillResult({
+    await sendFillResult(tabId, {
       filled: localFilled,
       total,
       remoteFilled: 0,
@@ -319,8 +323,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // popup no longer discards its state (see sendFillResult), so it's
     // easy to close it mid-fill, reopen, and click Fill again before the
     // first one has finished.
-    chrome.storage.local.get('fillInProgress').then(async ({ fillInProgress }) => {
-      if (fillInProgress) {
+    chrome.tabs.query({ active: true, currentWindow: true }).then(async ([tab]) => {
+      if (!tab) {
+        sendResponse({ ok: false, error: 'no active tab' });
+        return;
+      }
+      const tabId = tab.id;
+      const { fillInProgressTabs } = await chrome.storage.local.get('fillInProgressTabs');
+      if (fillInProgressTabs && fillInProgressTabs[tabId]) {
         sendResponse({ ok: false, error: 'Already filling this page - please wait for it to finish.' });
         return;
       }
@@ -332,19 +342,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ ok: false, error: "This doesn't look like a job application page." });
         return;
       }
-      chrome.storage.local.set({ fillInProgress: true }).then(() => {
-        fillActiveTab()
-          .then(() => sendResponse({ ok: true }))
-          .catch((err) => {
-            chrome.storage.local.set({ fillInProgress: false });
-            sendResponse({ ok: false, error: err.message });
-          });
-      });
+      const { fillInProgressTabs: current } = await chrome.storage.local.get('fillInProgressTabs');
+      await chrome.storage.local.set({ fillInProgressTabs: { ...current, [tabId]: true } });
+      fillActiveTab(tabId)
+        .then(() => sendResponse({ ok: true }))
+        .catch(async (err) => {
+          const { fillInProgressTabs: latest } = await chrome.storage.local.get('fillInProgressTabs');
+          const next = { ...latest };
+          delete next[tabId];
+          await chrome.storage.local.set({ fillInProgressTabs: next });
+          sendResponse({ ok: false, error: err.message });
+        });
     });
     return true;
   }
   if (message.type === 'LOCAL_FILL_DONE') {
     handleLocalFillDone(message, sender.tab.id);
     return false;
+  }
+});
+
+// Per-tab fill state has no other eviction path - without this, every tab
+// ever filled stays in storage for the life of the browser profile.
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  const { fillResults, fillInProgressTabs } = await chrome.storage.local.get(['fillResults', 'fillInProgressTabs']);
+  if (fillResults && tabId in fillResults) {
+    const next = { ...fillResults };
+    delete next[tabId];
+    await chrome.storage.local.set({ fillResults: next });
+  }
+  if (fillInProgressTabs && tabId in fillInProgressTabs) {
+    const next = { ...fillInProgressTabs };
+    delete next[tabId];
+    await chrome.storage.local.set({ fillInProgressTabs: next });
   }
 });
