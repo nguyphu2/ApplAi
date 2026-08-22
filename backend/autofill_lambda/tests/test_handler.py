@@ -31,6 +31,37 @@ def make_bedrock_json_response(payload_dict):
     }
 
 
+def make_bedrock_raw_text_response(raw_text):
+    return {
+        'body': MagicMock(read=lambda: json.dumps({
+            'content': [{'text': raw_text}],
+        }).encode('utf-8'))
+    }
+
+
+def test_tolerates_a_literal_newline_inside_a_fill_value(handler_module, monkeypatch):
+    handler_module.table.put_item(Item={
+        'user_id': 'user-123',
+        'profile_info': {},
+        'skills_text': '',
+        'resumes': [{'id': 'r1', 'filename': 'resume.pdf', 'text': 'Built APIs.\nFixed bugs.', 'uploaded_at': '2026-01-01T00:00:00Z'}],
+        'active_resume_ids': ['r1'],
+    })
+    # A real newline character embedded in a JSON string value, exactly as
+    # Claude sometimes returns it for a multi-line answer - Python's
+    # default strict json.loads rejects this with "Unterminated string".
+    raw_text = '{"fills": [{"field_id": "f0", "value": "Built APIs.\nFixed bugs."}]}'
+    invoke_model = MagicMock(return_value=make_bedrock_raw_text_response(raw_text))
+    monkeypatch.setattr(handler_module, 'bedrock_runtime', MagicMock(invoke_model=invoke_model))
+
+    fields = [{'field_id': 'f0', 'label': 'Responsibilities', 'name': '', 'id': '', 'placeholder': '', 'type': 'textarea'}]
+    response = handler_module.handler(make_event(body={'fields': fields, 'page_title': ''}), None)
+
+    assert response['statusCode'] == 200
+    body = json.loads(response['body'])
+    assert body == {'fills': [{'field_id': 'f0', 'value': 'Built APIs.\nFixed bugs.'}]}
+
+
 def test_counts_returns_zero_when_no_resume_or_skills(handler_module, monkeypatch):
     handler_module.table.put_item(Item={'user_id': 'user-123', 'profile_info': {'full_name': 'Ada Lovelace'}})
     invoke_model = MagicMock()

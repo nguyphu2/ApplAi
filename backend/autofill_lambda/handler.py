@@ -53,7 +53,12 @@ def invoke_claude_json(prompt, max_tokens):
         claude_text = claude_text.strip('`').strip()
         if claude_text.startswith('json'):
             claude_text = claude_text[4:].strip()
-    return json.loads(claude_text)
+    # strict=False: a multi-line answer (e.g. a "Responsibilities" value)
+    # comes back from Claude as a JSON string containing a literal newline
+    # rather than an escaped \n - valid enough to parse, but json.loads
+    # rejects raw control characters inside strings by default and fails
+    # with a misleading "Unterminated string" error.
+    return json.loads(claude_text, strict=False)
 
 
 def build_prompt(fields, profile_info, profile_text, page_title):
