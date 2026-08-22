@@ -98,9 +98,45 @@
     return EXCLUDED_FIELD_TERMS.some((term) => haystack.includes(term));
   }
 
+  // A lot of ATS platforms build "dropdowns" as a JS widget instead of a
+  // real <select>, following the standard ARIA combobox pattern: the
+  // trigger element (a plain div for widget libraries like react-widgets/
+  // Kendo/PrimeNG, or a text input for react-select/MUI Autocomplete/
+  // downshift-style pickers) exposes role="combobox" and points at a
+  // listbox of role="option" elements via aria-owns or aria-controls - the
+  // listbox itself often only exists in the DOM while open. Opening/
+  // closing it here just to read state, so the page looks untouched
+  // between fill attempts.
+  function getComboboxListbox(combo) {
+    const listboxId = combo.getAttribute('aria-owns') || combo.getAttribute('aria-controls');
+    return listboxId ? document.getElementById(listboxId) : null;
+  }
+
+  async function openCombobox(combo) {
+    combo.click();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  function closeCombobox(combo) {
+    combo.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  }
+
+  async function readComboboxOptions(combo) {
+    await openCombobox(combo);
+    const listbox = getComboboxListbox(combo);
+    const optionEls = listbox ? Array.from(listbox.querySelectorAll('[role="option"]')) : [];
+    const options = optionEls.map((opt) => opt.textContent.trim());
+    const selectedIndex = optionEls.findIndex((opt) => opt.getAttribute('aria-selected') === 'true');
+    closeCombobox(combo);
+    return { options, selectedIndex };
+  }
+
   const SELECTOR = 'input[type="text"], input[type="email"], input[type="tel"], input[type="url"], input[type="number"], input:not([type]), textarea';
-  const fields = Array.from(document.querySelectorAll(SELECTOR));
+  const fields = Array.from(document.querySelectorAll(SELECTOR))
+    .filter((el) => el.getAttribute('role') !== 'combobox');
   const selectFields = Array.from(document.querySelectorAll('select'));
+  const comboboxFields = Array.from(document.querySelectorAll('[role="combobox"]'))
+    .filter((el) => el.tagName !== 'SELECT');
 
   let filled = 0;
   let requiredTotal = 0;
@@ -187,10 +223,52 @@
     });
   }
 
+  for (const combo of comboboxFields) {
+    const labelText = getLabelText(combo);
+    const required = isRequiredField(combo, labelText);
+    if (required) {
+      requiredTotal += 1;
+    }
+
+    // Input-based comboboxes (react-select/MUI Autocomplete/downshift-style
+    // pickers) commonly show the chosen option's text as the input's own
+    // value rather than via an aria-selected option in the listbox -
+    // check that first so an already-answered field isn't reopened.
+    if (combo.tagName === 'INPUT' && combo.value.trim()) {
+      if (required) {
+        requiredFilled += 1;
+      }
+      continue;
+    }
+
+    const { options, selectedIndex } = await readComboboxOptions(combo);
+    // Index 0 is this widget's placeholder ("--", "Select...") - matches
+    // the same untouched/default convention used for native <select> above.
+    if (selectedIndex > 0) {
+      if (required) {
+        requiredFilled += 1;
+      }
+      continue;
+    }
+    const fieldId = 'applai-field-' + runId + '-' + nextFieldId;
+    nextFieldId += 1;
+    combo.setAttribute('data-applai-field-id', fieldId);
+    unmatched.push({
+      field_id: fieldId,
+      label: labelText,
+      name: '',
+      id: combo.id || '',
+      placeholder: '',
+      type: 'combobox',
+      required,
+      options: options.filter((text) => text && text !== '--').map((text) => ({ value: text, text })),
+    });
+  }
+
   chrome.runtime.sendMessage({
     type: 'LOCAL_FILL_DONE',
     filled,
-    total: fields.length + selectFields.length,
+    total: fields.length + selectFields.length + comboboxFields.length,
     requiredTotal,
     requiredFilled,
     unmatched,

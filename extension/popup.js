@@ -1,6 +1,7 @@
 const loginBtn = document.getElementById('login-btn');
 const logoutBtn = document.getElementById('logout-btn');
 const fillBtn = document.getElementById('fill-btn');
+const notJobPageEl = document.getElementById('not-job-page');
 const statusEl = document.getElementById('status');
 
 const fillProgressEl = document.getElementById('fill-progress');
@@ -17,10 +18,11 @@ function sendMessage(message) {
   return new Promise((resolve) => chrome.runtime.sendMessage(message, resolve));
 }
 
-function setLoggedInUI(loggedIn) {
+function setLoggedInUI(loggedIn, isJobPage) {
   loginBtn.classList.toggle('hidden', loggedIn);
   logoutBtn.classList.toggle('hidden', !loggedIn);
-  fillBtn.classList.toggle('hidden', !loggedIn);
+  fillBtn.classList.toggle('hidden', !loggedIn || !isJobPage);
+  notJobPageEl.classList.toggle('hidden', !loggedIn || isJobPage);
 }
 
 function setBar(trackEl, fillEl, countEl, done, total) {
@@ -61,7 +63,8 @@ loginBtn.addEventListener('click', async () => {
   const result = await sendMessage({ type: 'LOGIN' });
   if (result.ok) {
     statusEl.textContent = '';
-    setLoggedInUI(true);
+    const { isJobPage } = await sendMessage({ type: 'CHECK_JOB_PAGE' });
+    setLoggedInUI(true, isJobPage);
   } else {
     statusEl.textContent = result.error || 'Login failed.';
   }
@@ -69,14 +72,15 @@ loginBtn.addEventListener('click', async () => {
 
 logoutBtn.addEventListener('click', async () => {
   await sendMessage({ type: 'LOGOUT' });
-  setLoggedInUI(false);
+  setLoggedInUI(false, false);
   statusEl.textContent = '';
   fillProgressEl.classList.add('hidden');
 });
 
 (async function init() {
   const { loggedIn } = await sendMessage({ type: 'CHECK_LOGIN' });
-  setLoggedInUI(loggedIn);
+  const isJobPage = loggedIn ? (await sendMessage({ type: 'CHECK_JOB_PAGE' })).isJobPage : false;
+  setLoggedInUI(loggedIn, isJobPage);
   if (loggedIn) {
     const { fillInProgress, lastFillResult } = await chrome.storage.local.get(['fillInProgress', 'lastFillResult']);
     if (fillInProgress) {

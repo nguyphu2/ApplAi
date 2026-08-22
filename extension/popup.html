@@ -194,6 +194,13 @@
       color: var(--text-muted);
       margin: 0.8rem 0 0;
     }
+
+    #not-job-page {
+      font-size: 0.55rem;
+      line-height: 1.7;
+      color: var(--text-muted);
+      margin: 0.8rem 0 0;
+    }
   </style>
 </head>
 <body>
@@ -204,6 +211,7 @@
   <button id="login-btn">Log in</button>
   <button id="logout-btn" class="secondary hidden">Log out</button>
   <button id="fill-btn" class="hidden">Fill this page</button>
+  <p id="not-job-page" class="hidden">This doesn't look like a job application page, so Fill is turned off here.</p>
 
   <div id="fill-progress" class="hidden">
     <div class="progress-block">

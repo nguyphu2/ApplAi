@@ -90,6 +90,52 @@ async function getProfile() {
   return settings.profile_info || {};
 }
 
+// Runs inside the page (via executeScript) to decide if this looks like a
+// job application, so Fill isn't offered on arbitrary sites. Two signals:
+// a known ATS domain (covers the large majority of real postings, even
+// under a company's own custom domain via CNAME, e.g. careers.company.com
+// still resolving to Greenhouse/Lever), or a same-page heuristic (a resume/
+// CV upload field alongside a reasonably full form) for self-built or
+// unlisted application pages. Self-contained - no closures over
+// background.js state, since executeScript serializes it into the page.
+function detectJobApplicationPage() {
+  const KNOWN_ATS_HOSTS = [
+    'recruiting.paylocity.com', 'boards.greenhouse.io', 'job-boards.greenhouse.io',
+    'greenhouse.io', 'jobs.lever.co', 'lever.co', 'myworkdayjobs.com',
+    'icims.com', 'bamboohr.com', 'jobvite.com', 'smartrecruiters.com',
+    'ashbyhq.com', 'taleo.net', 'successfactors.com', 'workable.com',
+    'breezy.hr', 'recruitee.com', 'jazzhr.com', 'applytojob.com',
+    'ultipro.com', 'dayforcehcm.com', 'oraclecloud.com',
+  ];
+  const hostname = window.location.hostname.toLowerCase();
+  const hostIsKnownATS = KNOWN_ATS_HOSTS.some((h) => hostname === h || hostname.endsWith('.' + h));
+  if (hostIsKnownATS) return true;
+
+  const bodyText = document.body ? document.body.textContent.toLowerCase() : '';
+  const hasResumeUpload = Array.from(document.querySelectorAll('input[type="file"]')).some((input) => {
+    const context = (input.name + ' ' + input.id + ' ' + (input.closest('label')?.textContent || '')).toLowerCase();
+    return /resume|cv\b/.test(context) || /resume|cv\b/.test(bodyText);
+  });
+  const formFieldCount = document.querySelectorAll('input, select, textarea').length;
+  return hasResumeUpload && formFieldCount >= 5;
+}
+
+async function checkJobApplicationPage() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab) return false;
+  try {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: detectJobApplicationPage,
+    });
+    return !!result;
+  } catch (err) {
+    // Pages executeScript can't reach (chrome://, the Web Store, etc.)
+    // fail closed - Fill has nothing to act on there anyway.
+    return false;
+  }
+}
+
 async function fillActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) {
@@ -108,17 +154,38 @@ async function fillActiveTab() {
   });
 }
 
-function applyRemoteFillPlan(fills) {
+async function fillComboboxOption(combo, value) {
+  combo.click();
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const listboxId = combo.getAttribute('aria-owns') || combo.getAttribute('aria-controls');
+  const listbox = listboxId ? document.getElementById(listboxId) : null;
+  const optionEls = listbox ? Array.from(listbox.querySelectorAll('[role="option"]')) : [];
+  const match = optionEls.find((opt) => opt.textContent.trim() === value);
+  if (match) {
+    match.click();
+    return true;
+  }
+  combo.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  return false;
+}
+
+async function applyRemoteFillPlan(fills) {
   let filled = 0;
   let requiredFilled = 0;
   for (const { field_id, value } of fills) {
     const field = document.querySelector(`[data-applai-field-id="${field_id}"]`);
     if (!field) continue;
-    if (field.value.trim()) continue;
     const required = field.required || field.getAttribute('aria-required') === 'true';
-    field.value = value;
-    field.dispatchEvent(new Event('input', { bubbles: true }));
-    field.dispatchEvent(new Event('change', { bubbles: true }));
+
+    if (field.getAttribute('role') === 'combobox' && field.tagName !== 'SELECT') {
+      const ok = await fillComboboxOption(field, value);
+      if (!ok) continue;
+    } else {
+      if (field.value.trim()) continue;
+      field.value = value;
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      field.dispatchEvent(new Event('change', { bubbles: true }));
+    }
     filled += 1;
     if (required) {
       requiredFilled += 1;
@@ -217,6 +284,10 @@ async function handleLocalFillDone(message, tabId) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'CHECK_JOB_PAGE') {
+    checkJobApplicationPage().then((isJobPage) => sendResponse({ isJobPage }));
+    return true;
+  }
   if (message.type === 'LOGIN') {
     login()
       .then(() => sendResponse({ ok: true }))
@@ -241,9 +312,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // popup no longer discards its state (see sendFillResult), so it's
     // easy to close it mid-fill, reopen, and click Fill again before the
     // first one has finished.
-    chrome.storage.local.get('fillInProgress').then(({ fillInProgress }) => {
+    chrome.storage.local.get('fillInProgress').then(async ({ fillInProgress }) => {
       if (fillInProgress) {
         sendResponse({ ok: false, error: 'Already filling this page - please wait for it to finish.' });
+        return;
+      }
+      // The popup already hides the Fill button off job-application pages,
+      // but re-checking here means a stale popup can't trigger a fill on
+      // an unrelated page (e.g. left open, then the user navigates away).
+      const isJobPage = await checkJobApplicationPage();
+      if (!isJobPage) {
+        sendResponse({ ok: false, error: "This doesn't look like a job application page." });
         return;
       }
       chrome.storage.local.set({ fillInProgress: true }).then(() => {

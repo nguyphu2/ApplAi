@@ -117,6 +117,30 @@ def test_select_field_only_accepts_a_value_from_its_own_options(handler_module, 
     assert body == {'fills': [{'field_id': 'f0', 'value': 'OR'}]}
 
 
+def test_combobox_field_only_accepts_a_value_from_its_own_options(handler_module, monkeypatch):
+    handler_module.table.put_item(Item={
+        'user_id': 'user-123',
+        'profile_info': {},
+        'skills_text': '',
+        'resumes': [{'id': 'r1', 'filename': 'resume.pdf', 'text': 'B.S. in Computer Science', 'uploaded_at': '2026-01-01T00:00:00Z'}],
+        'active_resume_ids': ['r1'],
+    })
+    invoke_model = MagicMock(return_value=make_bedrock_response([
+        {'field_id': 'f0', 'value': 'Community College'},
+    ]))
+    monkeypatch.setattr(handler_module, 'bedrock_runtime', MagicMock(invoke_model=invoke_model))
+
+    fields = [{
+        'field_id': 'f0', 'label': 'School Type', 'name': '', 'id': 'educationHistory.type.0', 'placeholder': '',
+        'type': 'combobox', 'required': False,
+        'options': [{'value': 'High School', 'text': 'High School'}, {'value': 'University', 'text': 'University'}],
+    }]
+    response = handler_module.handler(make_event(body={'fields': fields, 'page_title': ''}), None)
+
+    assert response['statusCode'] == 200
+    assert json.loads(response['body']) == {'fills': []}
+
+
 def test_returns_502_when_bedrock_call_fails(handler_module, monkeypatch):
     handler_module.table.put_item(Item={
         'user_id': 'user-123',
