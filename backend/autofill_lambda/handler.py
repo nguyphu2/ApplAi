@@ -21,6 +21,7 @@ load_dotenv('.env')
 TABLE_NAME = os.getenv('SETTINGS_TABLE_NAME')
 CLAUDE_MODEL_ID = 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
 MAX_FIELDS = 60
+MAX_SECTION_COUNT = 6
 
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(TABLE_NAME)
@@ -35,6 +36,24 @@ def build_profile_text(item):
     active_ids = set(item.get('active_resume_ids', []))
     resume_texts = [r['text'] for r in item.get('resumes', []) if r['id'] in active_ids]
     return '\n'.join(t for t in [item.get('skills_text', ''), *resume_texts] if t).strip()
+
+
+def invoke_claude_json(prompt, max_tokens):
+    response = bedrock_runtime.invoke_model(
+        modelId=CLAUDE_MODEL_ID,
+        body=json.dumps({
+            'anthropic_version': 'bedrock-2023-05-31',
+            'max_tokens': max_tokens,
+            'messages': [{'role': 'user', 'content': prompt}],
+        }),
+    )
+    result = json.loads(response['body'].read())
+    claude_text = result['content'][0]['text'].strip()
+    if claude_text.startswith('```'):
+        claude_text = claude_text.strip('`').strip()
+        if claude_text.startswith('json'):
+            claude_text = claude_text[4:].strip()
+    return json.loads(claude_text)
 
 
 def build_prompt(fields, profile_info, profile_text, page_title):
@@ -73,9 +92,53 @@ Only include a field in "fills" if you are confident about its value.
 Omit any field you cannot confidently answer - do not guess."""
 
 
+def build_counts_prompt(profile_text):
+    return f"""Resume / skills text:
+{profile_text}
+
+Count how many separate education entries (distinct degrees/schools) and
+how many separate work history entries (distinct jobs/employers) this
+text lists.
+Respond with ONLY a JSON object in this exact shape, no other text
+before or after it:
+{{"education": <integer>, "work_history": <integer>}}
+Use 0 for a count if that section isn't present at all. Count only
+entries that are actually there - do not guess or round up."""
+
+
+def handle_counts(user_id):
+    try:
+        response = table.get_item(Key={'user_id': user_id})
+    except ClientError as e:
+        print(f'DynamoDB get_item failed: {e}')
+        return {'statusCode': 502, 'body': json.dumps({'error': 'autofill service failed'})}
+
+    item = response.get('Item', {})
+    profile_text = build_profile_text(item)
+
+    if not profile_text:
+        return {'statusCode': 200, 'body': json.dumps({'counts': {'education': 0, 'work_history': 0}})}
+
+    prompt = build_counts_prompt(profile_text[:20000])
+
+    try:
+        parsed = invoke_claude_json(prompt, max_tokens=100)
+        education = max(0, min(int(parsed.get('education', 0)), MAX_SECTION_COUNT))
+        work_history = max(0, min(int(parsed.get('work_history', 0)), MAX_SECTION_COUNT))
+    except Exception as e:
+        print(f'counts failed: {e}')
+        return {'statusCode': 502, 'body': json.dumps({'error': 'counts failed'})}
+
+    return {'statusCode': 200, 'body': json.dumps({'counts': {'education': education, 'work_history': work_history}})}
+
+
 def handler(event, context):
     user_id = get_user_id(event)
     body = json.loads(event.get('body') or '{}')
+
+    if body.get('mode') == 'counts':
+        return handle_counts(user_id)
+
     fields = body.get('fields') or []
     page_title = body.get('page_title', '')
 
@@ -100,21 +163,7 @@ def handler(event, context):
     prompt = build_prompt(fields, profile_info, profile_text[:20000], page_title)
 
     try:
-        response = bedrock_runtime.invoke_model(
-            modelId=CLAUDE_MODEL_ID,
-            body=json.dumps({
-                'anthropic_version': 'bedrock-2023-05-31',
-                'max_tokens': 1000,
-                'messages': [{'role': 'user', 'content': prompt}],
-            }),
-        )
-        result = json.loads(response['body'].read())
-        claude_text = result['content'][0]['text'].strip()
-        if claude_text.startswith('```'):
-            claude_text = claude_text.strip('`').strip()
-            if claude_text.startswith('json'):
-                claude_text = claude_text[4:].strip()
-        parsed = json.loads(claude_text)
+        parsed = invoke_claude_json(prompt, max_tokens=1000)
         raw_fills = parsed['fills']
     except Exception as e:
         print(f'autofill failed: {e}')

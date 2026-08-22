@@ -12,30 +12,55 @@
   // Deliberately narrow allowlist rather than a generic "anything
   // expandable" heuristic - a broad heuristic risks clicking something
   // destructive or unrelated (submit, navigate away, an unrelated modal).
-  const EXPANDABLE_BUTTON_PHRASES = [
-    'add education', 'add work history', 'add employment', 'add experience',
-    'add another education', 'add another job', 'add certification', 'add license',
-  ];
+  const PHRASE_CATEGORY = {
+    'add education': 'education',
+    'add another education': 'education',
+    'add work history': 'work_history',
+    'add employment': 'work_history',
+    'add experience': 'work_history',
+    'add another job': 'work_history',
+    'add certification': 'other',
+    'add license': 'other',
+  };
+  const EXPANDABLE_BUTTON_PHRASES = Object.keys(PHRASE_CATEGORY);
 
   function isExpandableButton(button) {
     const text = button.textContent.trim().toLowerCase();
     return EXPANDABLE_BUTTON_PHRASES.some((phrase) => text === phrase || text.includes(phrase));
   }
 
+  function matchedPhrase(text) {
+    return EXPANDABLE_BUTTON_PHRASES.find((phrase) => text === phrase || text.includes(phrase));
+  }
+
+  // How many blocks to reveal comes from Claude's read of the actual
+  // resume (see getSectionCounts in background.js) - a resume with 2
+  // degrees needs 2 education blocks, not a guessed flat number, and one
+  // with none shouldn't get an empty block opened at all. "other"
+  // (certifications/licenses) has no counting signal from the resume, so
+  // it keeps a small fixed cap.
+  const sectionCounts = window.__applaiSectionCounts || {};
+  function maxClicksForCategory(category) {
+    if (category === 'education') return sectionCounts.education || 0;
+    if (category === 'work_history') return sectionCounts.work_history || 0;
+    return 1;
+  }
+
   // Persisted on window (survives across separate Fill clicks on the same
   // page load, since content.js is re-injected fresh each time but window
   // state is not) so a repeat Fill click doesn't keep adding more blank
-  // entries on top of ones already revealed.
-  window.__applaiExpandButtonClicks = window.__applaiExpandButtonClicks || {};
+  // entries on top of ones already revealed. Counted per category, not
+  // per exact button text, so a page using two differently-worded buttons
+  // for the same section (e.g. "Add Employment" and "Add Experience")
+  // still can't exceed that section's count between them.
+  window.__applaiExpandCategoryClicks = window.__applaiExpandCategoryClicks || {};
 
-  // A resume with 2 degrees or 3 past jobs needs 2-3 blocks, not 1 - and
-  // some sites only reveal the button for the *next* entry ("Add another
+  // Some sites only reveal the button for the *next* entry ("Add another
   // education") after the previous one's already been clicked, so a
   // single snapshot-and-click pass never sees it. Re-querying after each
   // click, and allowing the same button text to be clicked multiple times
-  // (capped, so this can't loop forever or over-add on a plain resume),
-  // covers both "same button repeatable" and "a new button appears" sites.
-  const MAX_CLICKS_PER_PHRASE = 4;
+  // up to its category's count, covers both "same button repeatable" and
+  // "a new button appears" sites.
   let addedBlock = true;
   let safety = 0;
   while (addedBlock && safety < 20) {
@@ -43,12 +68,13 @@
     safety += 1;
     const expandButtons = Array.from(document.querySelectorAll('button')).filter(isExpandableButton);
     for (const button of expandButtons) {
-      const key = button.textContent.trim().toLowerCase();
-      const clicks = window.__applaiExpandButtonClicks[key] || 0;
-      if (clicks >= MAX_CLICKS_PER_PHRASE) {
+      const text = button.textContent.trim().toLowerCase();
+      const category = PHRASE_CATEGORY[matchedPhrase(text)];
+      const clicks = window.__applaiExpandCategoryClicks[category] || 0;
+      if (clicks >= maxClicksForCategory(category)) {
         continue;
       }
-      window.__applaiExpandButtonClicks[key] = clicks + 1;
+      window.__applaiExpandCategoryClicks[category] = clicks + 1;
       button.click();
       addedBlock = true;
       await new Promise((resolve) => setTimeout(resolve, 300));

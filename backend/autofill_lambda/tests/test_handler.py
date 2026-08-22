@@ -22,6 +22,46 @@ def make_bedrock_response(fills):
     }
 
 
+def make_bedrock_json_response(payload_dict):
+    payload = json.dumps(payload_dict)
+    return {
+        'body': MagicMock(read=lambda: json.dumps({
+            'content': [{'text': payload}],
+        }).encode('utf-8'))
+    }
+
+
+def test_counts_returns_zero_when_no_resume_or_skills(handler_module, monkeypatch):
+    handler_module.table.put_item(Item={'user_id': 'user-123', 'profile_info': {'full_name': 'Ada Lovelace'}})
+    invoke_model = MagicMock()
+    monkeypatch.setattr(handler_module, 'bedrock_runtime', MagicMock(invoke_model=invoke_model))
+
+    response = handler_module.handler(make_event(body={'mode': 'counts'}), None)
+
+    assert response['statusCode'] == 200
+    assert json.loads(response['body']) == {'counts': {'education': 0, 'work_history': 0}}
+    invoke_model.assert_not_called()
+
+
+def test_counts_returns_parsed_and_capped_counts(handler_module, monkeypatch):
+    handler_module.table.put_item(Item={
+        'user_id': 'user-123',
+        'profile_info': {},
+        'skills_text': '',
+        'resumes': [{'id': 'r1', 'filename': 'resume.pdf', 'text': 'Two degrees, three jobs', 'uploaded_at': '2026-01-01T00:00:00Z'}],
+        'active_resume_ids': ['r1'],
+    })
+    invoke_model = MagicMock(return_value=make_bedrock_json_response({'education': 2, 'work_history': 99}))
+    monkeypatch.setattr(handler_module, 'bedrock_runtime', MagicMock(invoke_model=invoke_model))
+
+    response = handler_module.handler(make_event(body={'mode': 'counts'}), None)
+
+    assert response['statusCode'] == 200
+    body = json.loads(response['body'])
+    assert body['counts']['education'] == 2
+    assert body['counts']['work_history'] == handler_module.MAX_SECTION_COUNT
+
+
 def test_returns_empty_fills_when_no_fields_given(handler_module):
     response = handler_module.handler(make_event(body={'fields': [], 'page_title': ''}), None)
 

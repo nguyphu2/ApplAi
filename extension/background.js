@@ -93,6 +93,36 @@ async function getProfile() {
   return settings.profile_info || {};
 }
 
+// How many "Add Education"/"Add Work History" clicks content.js should
+// make - asks Claude to read the resume, since that's unstructured text
+// and can't be reliably counted with string matching. Fails closed (0/0):
+// if this can't be determined, revealing zero extra blocks is a no-op,
+// same as before this feature existed, rather than guessing a number and
+// risking empty blocks the resume never asked for.
+async function getSectionCounts() {
+  const { id_token } = await chrome.storage.local.get('id_token');
+  if (!id_token) {
+    return { education: 0, work_history: 0 };
+  }
+  try {
+    const response = await fetch(`${API_BASE}/autofill`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${id_token}` },
+      body: JSON.stringify({ mode: 'counts' }),
+    });
+    if (!response.ok) {
+      return { education: 0, work_history: 0 };
+    }
+    const { counts } = await response.json();
+    return {
+      education: Number(counts?.education) || 0,
+      work_history: Number(counts?.work_history) || 0,
+    };
+  } catch (err) {
+    return { education: 0, work_history: 0 };
+  }
+}
+
 // Runs inside the page (via executeScript) to decide if this looks like a
 // job application, so Fill isn't offered on arbitrary sites. Two signals:
 // a known ATS domain (covers the large majority of real postings, even
@@ -141,11 +171,15 @@ async function checkJobApplicationPage() {
 
 async function fillActiveTab(tabId) {
   const profile = await getProfile();
+  const sectionCounts = await getSectionCounts();
 
   await chrome.scripting.executeScript({
     target: { tabId },
-    func: (p) => { window.__applaiProfile = p; },
-    args: [profile],
+    func: (p, counts) => {
+      window.__applaiProfile = p;
+      window.__applaiSectionCounts = counts;
+    },
+    args: [profile, sectionCounts],
   });
   await chrome.scripting.executeScript({
     target: { tabId },
