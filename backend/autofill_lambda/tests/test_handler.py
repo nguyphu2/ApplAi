@@ -14,44 +14,36 @@ def make_event(user_id='user-123', body=None):
 
 
 def make_bedrock_response(fills):
-    payload = json.dumps({'fills': fills})
     return {
         'body': MagicMock(read=lambda: json.dumps({
-            'content': [{'text': payload}],
+            'content': [{'type': 'tool_use', 'name': 'report_fills', 'input': {'fills': fills}}],
         }).encode('utf-8'))
     }
 
 
-def make_bedrock_json_response(payload_dict):
-    payload = json.dumps(payload_dict)
+def make_bedrock_counts_response(counts_dict):
     return {
         'body': MagicMock(read=lambda: json.dumps({
-            'content': [{'text': payload}],
+            'content': [{'type': 'tool_use', 'name': 'report_counts', 'input': counts_dict}],
         }).encode('utf-8'))
     }
 
 
-def make_bedrock_raw_text_response(raw_text):
-    return {
-        'body': MagicMock(read=lambda: json.dumps({
-            'content': [{'text': raw_text}],
-        }).encode('utf-8'))
-    }
-
-
-def test_tolerates_a_literal_newline_inside_a_fill_value(handler_module, monkeypatch):
+def test_fill_values_with_newlines_and_quotes_pass_through(handler_module, monkeypatch):
     handler_module.table.put_item(Item={
         'user_id': 'user-123',
         'profile_info': {},
         'skills_text': '',
-        'resumes': [{'id': 'r1', 'filename': 'resume.pdf', 'text': 'Built APIs.\nFixed bugs.', 'uploaded_at': '2026-01-01T00:00:00Z'}],
+        'resumes': [{'id': 'r1', 'filename': 'resume.pdf', 'text': 'Built APIs.\nFixed "critical" bugs.', 'uploaded_at': '2026-01-01T00:00:00Z'}],
         'active_resume_ids': ['r1'],
     })
-    # A real newline character embedded in a JSON string value, exactly as
-    # Claude sometimes returns it for a multi-line answer - Python's
-    # default strict json.loads rejects this with "Unterminated string".
-    raw_text = '{"fills": [{"field_id": "f0", "value": "Built APIs.\nFixed bugs."}]}'
-    invoke_model = MagicMock(return_value=make_bedrock_raw_text_response(raw_text))
+    # Free-text JSON from Claude kept breaking in new ways in production
+    # (a raw newline in a multi-line answer, an unescaped quote in resume
+    # text) - tool use sidesteps the whole category since Bedrock returns
+    # this already parsed rather than as a string we have to json.loads
+    # ourselves, so both tricky characters should just pass through.
+    tricky_value = 'Built APIs.\nFixed "critical" bugs.'
+    invoke_model = MagicMock(return_value=make_bedrock_response([{'field_id': 'f0', 'value': tricky_value}]))
     monkeypatch.setattr(handler_module, 'bedrock_runtime', MagicMock(invoke_model=invoke_model))
 
     fields = [{'field_id': 'f0', 'label': 'Responsibilities', 'name': '', 'id': '', 'placeholder': '', 'type': 'textarea'}]
@@ -59,7 +51,7 @@ def test_tolerates_a_literal_newline_inside_a_fill_value(handler_module, monkeyp
 
     assert response['statusCode'] == 200
     body = json.loads(response['body'])
-    assert body == {'fills': [{'field_id': 'f0', 'value': 'Built APIs.\nFixed bugs.'}]}
+    assert body == {'fills': [{'field_id': 'f0', 'value': tricky_value}]}
 
 
 def test_counts_returns_zero_when_no_resume_or_skills(handler_module, monkeypatch):
@@ -82,7 +74,7 @@ def test_counts_returns_parsed_and_capped_counts(handler_module, monkeypatch):
         'resumes': [{'id': 'r1', 'filename': 'resume.pdf', 'text': 'Two degrees, three jobs', 'uploaded_at': '2026-01-01T00:00:00Z'}],
         'active_resume_ids': ['r1'],
     })
-    invoke_model = MagicMock(return_value=make_bedrock_json_response({'education': 2, 'work_history': 99}))
+    invoke_model = MagicMock(return_value=make_bedrock_counts_response({'education': 2, 'work_history': 99}))
     monkeypatch.setattr(handler_module, 'bedrock_runtime', MagicMock(invoke_model=invoke_model))
 
     response = handler_module.handler(make_event(body={'mode': 'counts'}), None)
