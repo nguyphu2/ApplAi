@@ -29,6 +29,29 @@ def make_bedrock_counts_response(counts_dict):
     }
 
 
+def test_returns_empty_fills_when_tool_input_is_missing_fills_key(handler_module, monkeypatch):
+    # Can happen if generation gets cut off by max_tokens before the tool
+    # call's "fills" key is written - regression test for a bare
+    # KeyError('fills') seen in production.
+    handler_module.table.put_item(Item={
+        'user_id': 'user-123',
+        'profile_info': {'full_name': 'Ada Lovelace'},
+    })
+    truncated_response = {
+        'body': MagicMock(read=lambda: json.dumps({
+            'content': [{'type': 'tool_use', 'name': 'report_fills', 'input': {}}],
+        }).encode('utf-8'))
+    }
+    invoke_model = MagicMock(return_value=truncated_response)
+    monkeypatch.setattr(handler_module, 'bedrock_runtime', MagicMock(invoke_model=invoke_model))
+
+    fields = [{'field_id': 'f0', 'label': 'Company Name', 'name': '', 'id': '', 'placeholder': '', 'type': 'text'}]
+    response = handler_module.handler(make_event(body={'fields': fields, 'page_title': ''}), None)
+
+    assert response['statusCode'] == 200
+    assert json.loads(response['body']) == {'fills': []}
+
+
 def test_fill_values_with_newlines_and_quotes_pass_through(handler_module, monkeypatch):
     handler_module.table.put_item(Item={
         'user_id': 'user-123',

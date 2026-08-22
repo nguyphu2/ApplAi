@@ -194,8 +194,13 @@ def handler(event, context):
     prompt = build_prompt(fields, profile_info, profile_text[:20000], page_title)
 
     try:
-        parsed = invoke_claude_tool(prompt, 'report_fills', FILLS_TOOL_SCHEMA, max_tokens=1000)
-        raw_fills = parsed['fills']
+        # A request can carry up to MAX_FIELDS (60) fields, several of
+        # which may be textarea answers (e.g. "Responsibilities") several
+        # sentences long - 1000 was tight enough that a big batch could
+        # get cut off mid-generation before the tool call's "fills" key
+        # was ever written, which surfaced as a bare KeyError('fills').
+        parsed = invoke_claude_tool(prompt, 'report_fills', FILLS_TOOL_SCHEMA, max_tokens=4000)
+        raw_fills = parsed.get('fills', [])
     except Exception as e:
         print(f'autofill failed: {e}')
         return {'statusCode': 502, 'body': json.dumps({'error': 'autofill failed'})}
