@@ -87,6 +87,17 @@
       .map((opt) => ({ value: opt.value, text: opt.textContent.trim() }));
   }
 
+  // Resumes almost never state a past employer's own phone number or
+  // website, so Claude has nothing real to go on for these and tends to
+  // invent one - simplest fix is to never attempt them at all, local or
+  // remote, and just leave them for the user to fill by hand.
+  const EXCLUDED_FIELD_TERMS = ['company website', 'company url', 'companyurl', 'company phone', 'companyphone'];
+
+  function isExcludedField(labelText, name, id) {
+    const haystack = (labelText + ' ' + name + ' ' + id).toLowerCase();
+    return EXCLUDED_FIELD_TERMS.some((term) => haystack.includes(term));
+  }
+
   const SELECTOR = 'input[type="text"], input[type="email"], input[type="tel"], input[type="url"], input[type="number"], input:not([type]), textarea';
   const fields = Array.from(document.querySelectorAll(SELECTOR));
   const selectFields = Array.from(document.querySelectorAll('select'));
@@ -108,6 +119,9 @@
       if (required) {
         requiredFilled += 1;
       }
+      continue;
+    }
+    if (isExcludedField(labelText, field.name || '', field.id || '')) {
       continue;
     }
     const descriptor = {
@@ -146,7 +160,13 @@
       requiredTotal += 1;
     }
 
-    if (select.value) {
+    // Many dropdowns have no empty placeholder option, so the browser
+    // auto-selects the first real option before the user ever touches it -
+    // select.value is truthy in that state even though nothing was
+    // actually chosen. selectedIndex === 0 is the untouched/default state
+    // in both that case and the "-- Select --" placeholder case, so it's
+    // the more reliable signal that this field still needs filling.
+    if (select.value && select.selectedIndex !== 0) {
       if (required) {
         requiredFilled += 1;
       }
