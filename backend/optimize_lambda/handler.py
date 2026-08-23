@@ -146,9 +146,25 @@ never acceptable, even when that exact keyword is in the job posting or
 in this prompt's missing-keywords list. Only rephrase and re-emphasize
 content that is already genuinely present in the resume - never invent
 experience, skills, credentials, metrics, or achievements that aren't
-already there. {length_instruction} Only include a paragraph in
-"rewrites" if you are actually changing its text - omit any paragraph
-you are leaving as-is."""
+already there. Job titles, company names, employment dates, and
+locations are factual record, not phrasing to improve - if a paragraph
+contains any of these, copy them into new_text exactly as they appear
+in the original, character for character, word for word, with nothing
+added, removed, or reordered - even a single inserted word counts as
+fabrication. This holds even when a closer-matching word is sitting
+right there in the job posting: if the resume says "Software Engineer
+Intern" and the job posting is for a "Backend Software Engineer," do
+not change the resume's title to "Backend Software Engineer Intern" or
+any other variant - the candidate's actual title was never "Backend,"
+and that word does not belong in it no matter how well it would match.
+Only reword the surrounding description of the work, never the title,
+company, dates, or location tokens themselves. Write new_text as plain
+text only - never wrap keywords or anything else in markdown bold
+(**like this**), italics, or any other markdown syntax, since this text
+is inserted directly into the document as-is, not rendered as markdown,
+so any asterisks or underscores would show up literally in the resume.
+{length_instruction} Only include a paragraph in "rewrites" if you are
+actually changing its text - omit any paragraph you are leaving as-is."""
 
 
 def build_scan_prompt(paragraphs, job_description_text, target_match_percent, one_page):
@@ -175,9 +191,25 @@ achievements that aren't already there. Adding a technology, tool, or
 skill the candidate never mentioned anywhere in the resume (e.g. writing
 "Flask" into a bullet when nothing in the resume ever mentions Flask or
 an equivalent) is fabrication and is never acceptable, no matter how
-well it would match the job posting. {length_instruction} Only include
-a paragraph in "rewrites" if you are actually changing its text - omit
-any paragraph you are leaving as-is.
+well it would match the job posting. Job titles, company names,
+employment dates, and locations are factual record, not phrasing to
+improve - if a paragraph contains any of these, copy them into new_text
+exactly as they appear in the current text, word for word, with nothing
+added, removed, or reordered - even a single inserted word counts as
+fabrication. This holds even when a closer-matching word is sitting
+right there in the job posting: if the resume says "Software Engineer
+Intern" and the job posting is for a "Backend Software Engineer," do
+not change the resume's title to "Backend Software Engineer Intern" or
+any other variant - the candidate's actual title was never "Backend,"
+and that word does not belong in it no matter how well it would match.
+Only reword the surrounding description of the work, never the title,
+company, dates, or location tokens themselves. Write new_text as plain
+text only - never wrap keywords or anything else in markdown bold
+(**like this**), italics, or any other markdown syntax, since this text
+is inserted directly into the document as-is, not rendered as markdown,
+so any asterisks or underscores would show up literally in the resume.
+{length_instruction} Only include a paragraph in "rewrites" if you are
+actually changing its text - omit any paragraph you are leaving as-is.
 
 Also assess this resume's resulting keyword match against the job posting
 as match_score_after (0-100). Aim for around {target_match_percent}%, but
