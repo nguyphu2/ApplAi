@@ -113,25 +113,38 @@ def build_rewrite_prompt(paragraphs, job_description_text, missing_keywords, red
         if one_page else
         'Rewritten paragraphs do not need to match the original length.'
     )
-    return f"""Rewrite this resume's experience section to naturally
-include these keywords and remove these red flags, using the formula
-"Accomplished X, as measured by Y, by doing Z" wherever the underlying
-achievement supports it.
+    return f"""Rewrite this resume's experience section to more clearly
+surface skills and achievements it already genuinely contains, using the
+formula "Accomplished X, as measured by Y, by doing Z" wherever the
+underlying achievement supports it.
 
 Job posting:
 {job_description_text}
 
-Missing keywords to naturally include: {json.dumps(missing_keywords)}
-Red flags to remove: {json.dumps(red_flags)}
+Keywords the job posting wants that the resume currently lacks:
+{json.dumps(missing_keywords)}
+Red flags to address, but only by better presenting real content -
+never by adding something that was never there: {json.dumps(red_flags)}
 
 Resume paragraphs (each has a paragraph_index and its current text):
 {indexed_paragraphs_json(paragraphs)}
 
-Only rephrase and re-emphasize content that is already genuinely present
-in the resume - never invent experience, skills, credentials, metrics, or
-achievements that aren't already there. {length_instruction} Only include
-a paragraph in "rewrites" if you are actually changing its text - omit
-any paragraph you are leaving as-is."""
+The missing-keywords list above is a list of gaps, not a checklist to
+force into the text. For each one, first check: does the resume's
+existing content already demonstrate this, just described differently
+or without using this exact word? If yes, rephrase to surface it using
+the job posting's terminology. If no - the resume gives you nothing
+truthful to base it on - leave that keyword out entirely. Adding a
+technology, tool, or skill the candidate never mentioned (e.g. writing
+"Flask" into a bullet when nothing in the original resume ever mentions
+Flask, Python web frameworks, or equivalent) is fabrication and is
+never acceptable, even when that exact keyword is in the job posting or
+in this prompt's missing-keywords list. Only rephrase and re-emphasize
+content that is already genuinely present in the resume - never invent
+experience, skills, credentials, metrics, or achievements that aren't
+already there. {length_instruction} Only include a paragraph in
+"rewrites" if you are actually changing its text - omit any paragraph
+you are leaving as-is."""
 
 
 def build_scan_prompt(paragraphs, job_description_text, target_match_percent, one_page):
@@ -154,7 +167,11 @@ Resume paragraphs (each has a paragraph_index and its current text):
 
 Only rephrase and re-emphasize content that is already genuinely present
 in the resume - never invent experience, skills, credentials, metrics, or
-achievements that aren't already there. {length_instruction} Only include
+achievements that aren't already there. Adding a technology, tool, or
+skill the candidate never mentioned anywhere in the resume (e.g. writing
+"Flask" into a bullet when nothing in the resume ever mentions Flask or
+an equivalent) is fabrication and is never acceptable, no matter how
+well it would match the job posting. {length_instruction} Only include
 a paragraph in "rewrites" if you are actually changing its text - omit
 any paragraph you are leaving as-is.
 
