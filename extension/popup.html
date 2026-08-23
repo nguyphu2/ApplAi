@@ -152,20 +152,18 @@
 
     .pixel-progress {
       display: flex;
-      gap: 4px;
+      gap: 3px;
       margin-top: 0.9rem;
-      padding: 0 2px;
+      padding: 3px;
+      border: 2px solid var(--navy);
+      background: var(--bg);
     }
 
     .pixel-progress .cell {
       flex: 1 1 0;
-      height: 16px;
+      height: 14px;
       background: var(--panel-bg-alt);
-      border: 1px solid var(--navy);
-      clip-path: polygon(
-        40% 0%, 100% 0%, 100% 25%, 90% 25%, 90% 50%, 80% 50%, 80% 75%, 70% 75%, 70% 100%,
-        0% 100%, 0% 75%, 10% 75%, 10% 50%, 20% 50%, 20% 25%, 30% 25%, 30% 0%
-      );
+      clip-path: polygon(35% 0%, 100% 0%, 65% 100%, 0% 100%);
     }
 
     .pixel-progress .cell.active {
