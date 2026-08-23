@@ -1,5 +1,6 @@
 docs/
 .claude
+graphify-out/
 
 __pycache__/
 *.pyc
