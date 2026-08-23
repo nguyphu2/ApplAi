@@ -70,7 +70,14 @@ def with_resume_urls(user_id, item):
                 **r,
                 'file_url': s3_client.generate_presigned_url(
                     'get_object',
-                    Params={'Bucket': BUCKET_NAME, 'Key': resume_file_key(user_id, r['id'], r.get('file_type', 'pdf'))},
+                    Params={
+                        'Bucket': BUCKET_NAME,
+                        'Key': resume_file_key(user_id, r['id'], r.get('file_type', 'pdf')),
+                        # Without this, the browser names the download after
+                        # the S3 key - the resume's internal UUID - instead
+                        # of the human-readable filename stored alongside it.
+                        'ResponseContentDisposition': f'attachment; filename="{r.get("filename", "resume")}"',
+                    },
                     ExpiresIn=RESUME_URL_EXPIRY_SECONDS,
                 ),
             }

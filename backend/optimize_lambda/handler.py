@@ -48,8 +48,9 @@ ANALYZE_TOOL_SCHEMA = {
         'match_score_before': {'type': 'integer'},
         'missing_keywords': {'type': 'array', 'items': {'type': 'string'}},
         'red_flags': {'type': 'array', 'items': {'type': 'string'}},
+        'job_title': {'type': 'string'},
     },
-    'required': ['match_score_before', 'missing_keywords', 'red_flags'],
+    'required': ['match_score_before', 'missing_keywords', 'red_flags', 'job_title'],
 }
 
 REWRITE_TOOL_SCHEMA = {
@@ -99,9 +100,12 @@ Resume paragraphs:
 
 Give a match score out of 100 (match_score_before), the top 5 keywords
 from the job posting that are missing from the resume (missing_keywords),
-and the 3 red flags a hiring manager would spot in this resume in under
+the 3 red flags a hiring manager would spot in this resume in under
 10 seconds (red_flags) - things like unquantified claims, vague titles,
-or an obviously missing must-have skill."""
+or an obviously missing must-have skill - and the job posting's actual
+title (job_title), e.g. "Software Engineer Intern" or "Senior Backend
+Engineer" - the specific role title as written in the posting, not the
+company name or a generic category."""
 
 
 def build_rewrite_prompt(paragraphs, job_description_text, missing_keywords, red_flags, one_page):
@@ -202,6 +206,21 @@ def invoke_claude_tool(prompt, tool_name, tool_schema, max_tokens):
     return tool_use['input']
 
 
+def sanitize_filename_part(text):
+    return ''.join(ch for ch in text if ch.isalnum())
+
+
+def build_result_filename(profile_info, job_title):
+    first_name = sanitize_filename_part(profile_info.get('first_name', ''))
+    last_name = sanitize_filename_part(profile_info.get('last_name', ''))
+    role = sanitize_filename_part(job_title or '')
+    if first_name and last_name and role:
+        return f'{first_name}{last_name}_{role}.docx'
+    if first_name and last_name:
+        return f'{first_name}{last_name}_Resume.docx'
+    return 'resume.docx'
+
+
 def apply_rewrites(document, rewrites):
     for rewrite in rewrites:
         index = rewrite.get('paragraph_index')
@@ -269,6 +288,7 @@ def handler(event, context):
         match_score_before = analysis.get('match_score_before', 0)
         missing_keywords = analysis.get('missing_keywords', [])
         red_flags = analysis.get('red_flags', [])
+        job_title = analysis.get('job_title', '')
 
         rewrite_result = invoke_claude_tool(
             build_rewrite_prompt(paragraphs, job_description_text, missing_keywords, red_flags, one_page),
@@ -292,14 +312,11 @@ def handler(event, context):
     new_docx_bytes = output_buffer.getvalue()
     new_text = '\n'.join(p.text for p in document.paragraphs if p.text.strip())
 
+    result_filename = build_result_filename(item.get('profile_info', {}), job_title)
+
     if save_as_new_copy:
         new_resume_id = str(uuid.uuid4())
-        original_filename = resume.get('filename', 'resume.docx')
-        if '.' in original_filename:
-            base, ext = original_filename.rsplit('.', 1)
-            new_filename = f'{base} (optimized).{ext}'
-        else:
-            new_filename = f'{original_filename} (optimized)'
+        new_filename = result_filename
         try:
             s3_client.put_object(
                 Bucket=BUCKET_NAME,
@@ -318,7 +335,6 @@ def handler(event, context):
             'uploaded_at': datetime.now(timezone.utc).isoformat(),
         })
         result_resume_id = new_resume_id
-        result_filename = new_filename
     else:
         try:
             s3_client.put_object(
@@ -331,8 +347,8 @@ def handler(event, context):
             print(f'could not upload optimized resume: {e}')
             return {'statusCode': 502, 'body': json.dumps({'error': 'optimize service failed'})}
         resume['text'] = new_text
+        resume['filename'] = result_filename
         result_resume_id = resume_id
-        result_filename = resume.get('filename', 'resume.docx')
 
     try:
         table.put_item(Item={**item, 'user_id': user_id, 'resumes': resumes})

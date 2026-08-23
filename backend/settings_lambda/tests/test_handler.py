@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from botocore.exceptions import ClientError
@@ -105,6 +106,20 @@ def test_add_resume_uploads_docx_to_s3_and_returns_a_working_url(handler_module,
         Key=handler_module.resume_file_key('user-123', resume['id'], 'docx'),
     )
     assert stored_object['Body'].read() == b'fake docx bytes'
+
+
+def test_resume_url_sets_download_filename_from_stored_filename(handler_module, monkeypatch):
+    monkeypatch.setattr(handler_module, 'extract_docx_text', lambda docx_bytes: 'extracted text')
+    docx_base64 = base64.b64encode(b'fake docx bytes').decode('utf-8')
+
+    put_response = handler_module.handler(
+        make_event('PUT', body={'add_resume': {'filename': 'AdaLovelace_SoftwareEngineer.docx', 'resume_docx_base64': docx_base64}}),
+        None,
+    )
+
+    resume = json.loads(put_response['body'])['resumes'][0]
+    query = parse_qs(urlparse(resume['file_url']).query)
+    assert query['response-content-disposition'][0] == 'attachment; filename="AdaLovelace_SoftwareEngineer.docx"'
 
 
 def test_file_url_is_not_persisted_to_dynamodb(handler_module, monkeypatch):

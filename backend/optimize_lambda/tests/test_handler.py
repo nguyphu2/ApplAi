@@ -42,6 +42,7 @@ def make_three_stage_responses(
     missing_keywords=('Flask', 'Kubernetes', 'CI/CD', 'GraphQL', 'Terraform'),
     red_flags=('No quantified impact', 'Vague job titles', 'Missing recent tech stack'),
     match_score_before=40,
+    job_title='',
     rewrite_rewrites=(),
     scan_rewrites=(),
     match_score_after=80,
@@ -51,6 +52,7 @@ def make_three_stage_responses(
             'match_score_before': match_score_before,
             'missing_keywords': list(missing_keywords),
             'red_flags': list(red_flags),
+            'job_title': job_title,
         }),
         make_tool_response('report_rewrite', {'rewrites': list(rewrite_rewrites)}),
         make_tool_response('report_scan', {'rewrites': list(scan_rewrites), 'match_score_after': match_score_after}),
@@ -186,7 +188,10 @@ def test_save_as_new_copy_creates_new_entry_without_touching_original(handler_mo
     assert response['statusCode'] == 200
     body = json.loads(response['body'])
     assert body['resume_id'] != 'r1'
-    assert body['filename'] == 'resume (optimized).docx'
+    # No profile_info in this fixture, so both the original and the new
+    # copy fall back to the generic name - they remain distinct resumes
+    # (different ids/S3 keys) even though their filenames collide.
+    assert body['filename'] == 'resume.docx'
 
     item = handler_module.table.get_item(Key={'user_id': 'user-123'})['Item']
     assert len(item['resumes']) == 2
@@ -198,6 +203,40 @@ def test_save_as_new_copy_creates_new_entry_without_touching_original(handler_mo
         Key=handler_module.resume_file_key('user-123', 'r1', 'docx'),
     )
     assert read_docx_paragraphs(original_stored['Body'].read())[2] == 'Built REST APIs in Python'
+
+
+def test_result_filename_uses_first_last_name_and_job_title(handler_module, monkeypatch):
+    upload_test_resume(handler_module, 'user-123', 'r1', ['Ada Lovelace', 'Software Engineer', 'Built REST APIs in Python'])
+    item = handler_module.table.get_item(Key={'user_id': 'user-123'})['Item']
+    item['profile_info'] = {'first_name': 'Ada', 'last_name': 'Lovelace'}
+    handler_module.table.put_item(Item=item)
+
+    invoke_model = MagicMock(side_effect=make_three_stage_responses(job_title='Software Engineer Intern'))
+    monkeypatch.setattr(handler_module, 'bedrock_runtime', MagicMock(invoke_model=invoke_model))
+
+    response = handler_module.handler(make_event(body={
+        'resume_id': 'r1',
+        'job_description_text': 'Looking for a software engineer intern',
+    }), None)
+
+    assert response['statusCode'] == 200
+    body = json.loads(response['body'])
+    assert body['filename'] == 'AdaLovelace_SoftwareEngineerIntern.docx'
+
+
+def test_result_filename_falls_back_without_profile_name(handler_module, monkeypatch):
+    upload_test_resume(handler_module, 'user-123', 'r1', ['Ada Lovelace', 'Software Engineer', 'Built REST APIs in Python'])
+    invoke_model = MagicMock(side_effect=make_three_stage_responses(job_title='Software Engineer Intern'))
+    monkeypatch.setattr(handler_module, 'bedrock_runtime', MagicMock(invoke_model=invoke_model))
+
+    response = handler_module.handler(make_event(body={
+        'resume_id': 'r1',
+        'job_description_text': 'Looking for a software engineer intern',
+    }), None)
+
+    assert response['statusCode'] == 200
+    body = json.loads(response['body'])
+    assert body['filename'] == 'resume.docx'
 
 
 def test_bedrock_failure_returns_502(handler_module, monkeypatch):
