@@ -9,6 +9,7 @@ resume, remove a resume, or change which resumes are active for search as
 independent actions without clobbering the rest of the saved profile.
 """
 import base64
+import io
 import json
 import os
 import uuid
@@ -16,9 +17,8 @@ from datetime import datetime, timezone
 
 import boto3
 from botocore.exceptions import ClientError
+from docx import Document
 from dotenv import load_dotenv
-
-from textract import extract_text_from_pdf
 
 load_dotenv('.env')
 TABLE_NAME = os.getenv('SETTINGS_TABLE_NAME')
@@ -34,8 +34,14 @@ def get_user_id(event):
     return event['requestContext']['authorizer']['jwt']['claims']['sub']
 
 
-def resume_pdf_key(user_id, resume_id):
-    return f'resumes/{user_id}/{resume_id}.pdf'
+def resume_file_key(user_id, resume_id, file_type='pdf'):
+    extension = 'docx' if file_type == 'docx' else 'pdf'
+    return f'resumes/{user_id}/{resume_id}.{extension}'
+
+
+def extract_docx_text(docx_bytes):
+    document = Document(io.BytesIO(docx_bytes))
+    return '\n'.join(p.text for p in document.paragraphs if p.text.strip())
 
 
 def get_item(user_id):
@@ -59,9 +65,9 @@ def with_resume_urls(user_id, item):
         'resumes': [
             {
                 **r,
-                'pdf_url': s3_client.generate_presigned_url(
+                'file_url': s3_client.generate_presigned_url(
                     'get_object',
-                    Params={'Bucket': BUCKET_NAME, 'Key': resume_pdf_key(user_id, r['id'])},
+                    Params={'Bucket': BUCKET_NAME, 'Key': resume_file_key(user_id, r['id'], r.get('file_type', 'pdf'))},
                     ExpiresIn=RESUME_URL_EXPIRY_SECONDS,
                 ),
             }
@@ -98,35 +104,41 @@ def handler(event, context):
             add_resume = body.get('add_resume')
             if add_resume:
                 try:
-                    pdf_bytes = base64.b64decode(add_resume['resume_pdf_base64'])
-                    text = extract_text_from_pdf(pdf_bytes)
+                    docx_bytes = base64.b64decode(add_resume['resume_docx_base64'])
+                    text = extract_docx_text(docx_bytes)
                 except Exception as e:
-                    print(f'could not read resume PDF: {e}')
-                    return {'statusCode': 422, 'body': json.dumps({'error': 'could not read PDF'})}
+                    print(f'could not read resume DOCX: {e}')
+                    return {'statusCode': 422, 'body': json.dumps({'error': 'could not read DOCX'})}
                 resume_id = str(uuid.uuid4())
                 s3_client.put_object(
                     Bucket=BUCKET_NAME,
-                    Key=resume_pdf_key(user_id, resume_id),
-                    Body=pdf_bytes,
-                    ContentType='application/pdf',
+                    Key=resume_file_key(user_id, resume_id, 'docx'),
+                    Body=docx_bytes,
+                    ContentType='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                 )
                 item['resumes'].append({
                     'id': resume_id,
-                    'filename': add_resume.get('filename', 'resume.pdf'),
+                    'filename': add_resume.get('filename', 'resume.docx'),
                     'text': text,
+                    'file_type': 'docx',
                     'uploaded_at': datetime.now(timezone.utc).isoformat(),
                 })
 
             remove_resume_id = body.get('remove_resume_id')
             if remove_resume_id:
+                removed = next((r for r in item['resumes'] if r['id'] == remove_resume_id), None)
                 item['resumes'] = [r for r in item['resumes'] if r['id'] != remove_resume_id]
                 item['active_resume_ids'] = [
                     rid for rid in item['active_resume_ids'] if rid != remove_resume_id
                 ]
-                try:
-                    s3_client.delete_object(Bucket=BUCKET_NAME, Key=resume_pdf_key(user_id, remove_resume_id))
-                except ClientError as e:
-                    print(f'could not delete resume PDF from S3: {e}')
+                if removed:
+                    try:
+                        s3_client.delete_object(
+                            Bucket=BUCKET_NAME,
+                            Key=resume_file_key(user_id, remove_resume_id, removed.get('file_type', 'pdf')),
+                        )
+                    except ClientError as e:
+                        print(f'could not delete resume file from S3: {e}')
 
             if 'active_resume_ids' in body:
                 valid_ids = {r['id'] for r in item['resumes']}
