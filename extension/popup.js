@@ -70,17 +70,44 @@ optimizeBtn.addEventListener('click', async () => {
     statusEl.textContent = response.error || 'Optimize failed.';
     return;
   }
-  const { match_score_before, match_score_after, missing_keywords, red_flags, filename } = response.result;
-  resultEl.innerHTML = `
-    <div class="score-row"><span class="before">${match_score_before}%</span> &rarr; <span class="after">${match_score_after}% match</span></div>
-    <div>${saveAsNewToggle.checked ? 'Saved as' : 'Updated'}: ${filename}</div>
-    <h4>Missing keywords (before)</h4>
-    <ul>${missing_keywords.map((k) => `<li>${k}</li>`).join('')}</ul>
-    <h4>Red flags (before)</h4>
-    <ul>${red_flags.map((f) => `<li>${f}</li>`).join('')}</ul>
-  `;
+  buildResultPanel({ ...response.result, savedAsNew: saveAsNewToggle.checked });
   resultEl.classList.remove('hidden');
 });
+
+function buildResultPanel({ match_score_before, match_score_after, missing_keywords, red_flags, filename, savedAsNew }) {
+  resultEl.innerHTML = '';
+
+  const scoreRow = document.createElement('div');
+  scoreRow.className = 'score-row';
+  const before = document.createElement('span');
+  before.className = 'before';
+  before.textContent = `${match_score_before}%`;
+  const after = document.createElement('span');
+  after.className = 'after';
+  after.textContent = `${match_score_after}% match`;
+  scoreRow.append(before, ' → ', after);
+  resultEl.appendChild(scoreRow);
+
+  const savedLine = document.createElement('div');
+  savedLine.textContent = `${savedAsNew ? 'Saved as' : 'Updated'}: ${filename}`;
+  resultEl.appendChild(savedLine);
+
+  function appendList(heading, items) {
+    const h = document.createElement('h4');
+    h.textContent = heading;
+    resultEl.appendChild(h);
+    const ul = document.createElement('ul');
+    for (const item of items) {
+      const li = document.createElement('li');
+      li.textContent = item;
+      ul.appendChild(li);
+    }
+    resultEl.appendChild(ul);
+  }
+
+  appendList('Missing keywords (before)', missing_keywords);
+  appendList('Red flags (before)', red_flags);
+}
 
 async function init() {
   const { loggedIn } = await sendMessage({ type: 'CHECK_LOGIN' });
@@ -103,7 +130,13 @@ async function init() {
     optimizerForm.classList.add('hidden');
     return;
   }
-  resumeSelect.innerHTML = resumes.map((r) => `<option value="${r.id}">${r.filename}</option>`).join('');
+  resumeSelect.innerHTML = '';
+  for (const r of resumes) {
+    const option = document.createElement('option');
+    option.value = r.id;
+    option.textContent = r.filename;
+    resumeSelect.appendChild(option);
+  }
 }
 
 init();

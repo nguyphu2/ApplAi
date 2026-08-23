@@ -145,3 +145,23 @@ def test_extract_docx_text_reads_real_paragraphs(handler_module):
     text = handler_module.extract_docx_text(docx_bytes)
 
     assert text == 'Ada Lovelace\nSoftware Engineer Intern at Acme Corp\nBuilt REST APIs'
+
+
+def test_extract_docx_text_raises_on_table_based_or_near_empty_docx(handler_module):
+    docx_bytes = make_test_docx(['Ada Lovelace'])
+
+    with pytest.raises(ValueError):
+        handler_module.extract_docx_text(docx_bytes)
+
+
+def test_add_resume_with_near_empty_docx_returns_422(handler_module):
+    docx_bytes = make_test_docx(['Ada Lovelace'])
+    docx_base64 = base64.b64encode(docx_bytes).decode('utf-8')
+
+    put_response = handler_module.handler(
+        make_event('PUT', body={'add_resume': {'filename': 'resume.docx', 'resume_docx_base64': docx_base64}}),
+        None,
+    )
+
+    assert put_response['statusCode'] == 422
+    assert json.loads(put_response['body'])['error'] == 'could not read DOCX'

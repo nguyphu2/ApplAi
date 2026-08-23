@@ -41,7 +41,10 @@ def resume_file_key(user_id, resume_id, file_type='pdf'):
 
 def extract_docx_text(docx_bytes):
     document = Document(io.BytesIO(docx_bytes))
-    return '\n'.join(p.text for p in document.paragraphs if p.text.strip())
+    paragraphs = [p.text for p in document.paragraphs if p.text.strip()]
+    if len(paragraphs) < 3:
+        raise ValueError('resume has too little extractable text - it may use a table-based layout that is not yet supported')
+    return '\n'.join(paragraphs)
 
 
 def get_item(user_id):

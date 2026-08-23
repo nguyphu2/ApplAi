@@ -8,21 +8,33 @@
     return style.display !== 'none' && style.visibility !== 'hidden' && el.offsetParent !== null;
   }
 
+  function ownText(el) {
+    let text = '';
+    for (const node of el.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.textContent;
+      }
+    }
+    return text.trim();
+  }
+
   function largestTextBlock() {
     const blockTags = ['DIV', 'SECTION', 'ARTICLE', 'MAIN', 'P'];
     let best = null;
     let bestLength = 0;
     for (const el of document.querySelectorAll(blockTags.join(','))) {
       if (!isVisible(el)) continue;
-      // Only consider elements whose OWN direct text (not a descendant's,
-      // to avoid re-counting the same text once per ancestor level) makes
-      // up a meaningful share of what's inside them - otherwise the
-      // largest match is always <body> or another oversized wrapper.
       const text = el.textContent.trim();
-      if (text.length > bestLength) {
-        best = el;
-        bestLength = text.length;
-      }
+      if (text.length <= bestLength) continue;
+      // A large element whose OWN text is tiny is just a wrapper around
+      // other blocks (nav, body, a page-level container) - require most of
+      // its length to come from its own text, not descendants, so the
+      // winner is an actual content block (like a job description), not
+      // the largest ancestor wrapper.
+      const ratio = text.length > 0 ? ownText(el).length / text.length : 0;
+      if (ratio < 0.3 && el.children.length > 0) continue;
+      best = el;
+      bestLength = text.length;
     }
     return best ? best.textContent.trim() : document.body.textContent.trim();
   }

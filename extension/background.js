@@ -153,12 +153,19 @@ function detectJobDescriptionPage() {
   ];
   const bodyText = document.body ? document.body.textContent.toLowerCase() : '';
   const termHits = POSTING_TERMS.filter((term) => bodyText.includes(term)).length;
-  const formFieldCount = document.querySelectorAll('input, select, textarea').length;
+  const EXCLUDED_INPUT_TYPES = ['hidden', 'search', 'submit', 'button'];
+  const formFieldCount = Array.from(document.querySelectorAll('input, select, textarea')).filter((el) => {
+    if (el.tagName === 'INPUT' && EXCLUDED_INPUT_TYPES.includes((el.type || '').toLowerCase())) return false;
+    return el.offsetParent !== null;
+  }).length;
   // A real posting page reliably mentions at least two of these terms and
   // isn't itself a multi-field application form (which the old autofill
   // detector already covered, and which this feature explicitly excludes
   // per the design - the optimizer only runs on the description page).
-  return termHits >= 2 && formFieldCount < 5;
+  // Only visible, meaningfully-interactive fields count - hidden inputs,
+  // CSRF tokens, search boxes, and sign-in widgets shouldn't disqualify a
+  // real job posting page.
+  return termHits >= 2 && formFieldCount < 8;
 }
 
 async function checkJobDescriptionPage() {
@@ -176,15 +183,33 @@ async function checkJobDescriptionPage() {
 }
 
 async function scrapeJobDescription(tabId) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      chrome.runtime.onMessage.removeListener(listener);
+      reject(new Error('timed out reading this page - try again'));
+    }, 15000);
+
     const listener = (message, sender) => {
       if (message.type === 'JOB_DESCRIPTION_SCRAPED' && sender.tab && sender.tab.id === tabId) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
         chrome.runtime.onMessage.removeListener(listener);
         resolve({ text: message.text, pageTitle: message.pageTitle });
       }
     };
     chrome.runtime.onMessage.addListener(listener);
-    chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+
+    chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] }).catch((err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      chrome.runtime.onMessage.removeListener(listener);
+      reject(err);
+    });
   });
 }
 

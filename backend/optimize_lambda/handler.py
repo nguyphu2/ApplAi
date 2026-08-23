@@ -207,6 +207,7 @@ def handler(event, context):
 
     resume_id = body.get('resume_id')
     job_description_text = (body.get('job_description_text') or '').strip()
+    job_description_text = job_description_text[:6000]
     target_match_percent = body.get('target_match_percent', 70)
     one_page = bool(body.get('one_page'))
     save_as_new_copy = bool(body.get('save_as_new_copy'))
@@ -239,6 +240,10 @@ def handler(event, context):
         print(f'could not parse resume DOCX: {e}')
         return {'statusCode': 502, 'body': json.dumps({'error': 'could not read resume DOCX'})}
 
+    non_empty_count = sum(1 for p in paragraphs if p.strip())
+    if non_empty_count < 3:
+        return {'statusCode': 400, 'body': json.dumps({'error': 'resume has too little extractable text - it may use a table-based layout that is not yet supported'})}
+
     try:
         analysis = invoke_claude_tool(
             build_analyze_prompt(paragraphs, job_description_text),
@@ -250,14 +255,14 @@ def handler(event, context):
 
         rewrite_result = invoke_claude_tool(
             build_rewrite_prompt(paragraphs, job_description_text, missing_keywords, red_flags, one_page),
-            'report_rewrite', REWRITE_TOOL_SCHEMA, max_tokens=4000,
+            'report_rewrite', REWRITE_TOOL_SCHEMA, max_tokens=2000,
         )
         apply_rewrites(document, rewrite_result.get('rewrites', []))
         paragraphs = [p.text for p in document.paragraphs]
 
         scan_result = invoke_claude_tool(
             build_scan_prompt(paragraphs, job_description_text, target_match_percent, one_page),
-            'report_scan', SCAN_TOOL_SCHEMA, max_tokens=4000,
+            'report_scan', SCAN_TOOL_SCHEMA, max_tokens=2000,
         )
         apply_rewrites(document, scan_result.get('rewrites', []))
         match_score_after = scan_result.get('match_score_after', match_score_before)
