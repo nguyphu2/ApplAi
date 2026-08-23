@@ -1,13 +1,9 @@
-# ApplAI Autofill
+# ApplAI Resume Optimizer
 
-Chrome extension (Manifest V3) that fills job application form fields from your saved ApplAI
-profile. It runs in two passes: a local synonym-dictionary matcher fills what it can with no
-network call at all, then whatever's still unmatched gets sent to the `applai-autofill` Lambda
-(field labels, names, placeholders, and the page title only — no full page content), which asks
-Claude to resolve what it can from your saved profile and resume text. If the `/autofill` Lambda
-and route aren't deployed, or the request fails for any reason, the extension falls back to
-showing only the local pass's results with a "couldn't reach ApplAI for the rest" message — the
-local fill is never lost or blocked on the remote pass.
+Chrome extension (Manifest V3) that rewrites a saved DOCX resume's bullet points and summary
+toward a target keyword-match percentage against the job description on the current page. Editing
+happens in place inside the original DOCX file's paragraph runs, so every font, margin, and layout
+choice from the original document survives untouched.
 
 ## Load the extension
 
@@ -43,16 +39,9 @@ different path.
      --auth-session-validity 3
    ```
 
-## Testing against the sample form
+## Using it
 
-`extension/test-fixtures/sample-form.html` is a local `file://` page. `activeTab` does not grant
-access to `file://` URLs on its own, so enable "Allow access to file URLs" for this extension at
-`chrome://extensions` (off by default) before testing against it.
-
-## Running the matcher's unit tests
-
-Requires Node.js 18+.
-
-```bash
-node --test extension/test/matcher.test.js
-```
+1. Upload a DOCX resume on the ApplAI website's Profile tab.
+2. Navigate to a job description page (a posting's own page - not the application form).
+3. Open the extension popup, pick the resume, set a target match percentage and the two toggles,
+   and click Optimize.

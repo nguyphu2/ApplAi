@@ -90,6 +90,57 @@ async function getProfile() {
   return settings.profile_info || {};
 }
 
+async function getDocxResumes() {
+  const { id_token } = await chrome.storage.local.get('id_token');
+  if (!id_token) {
+    throw new Error('not logged in');
+  }
+  const response = await fetch(`${API_BASE}/settings`, {
+    headers: { Authorization: `Bearer ${id_token}` },
+  });
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      await chrome.storage.local.remove(['id_token', 'access_token']);
+      throw new Error('your session expired — please log in again');
+    }
+    throw new Error('could not load your resumes');
+  }
+  const settings = await response.json();
+  return (settings.resumes || []).filter((r) => r.file_type === 'docx');
+}
+
+async function optimizeResume({ resumeId, targetMatchPercent, onePage, saveAsNewCopy }) {
+  const { id_token } = await chrome.storage.local.get('id_token');
+  if (!id_token) {
+    throw new Error('not logged in');
+  }
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab) {
+    throw new Error('no active tab');
+  }
+  const { text: jobDescriptionText } = await scrapeJobDescription(tab.id);
+  const response = await fetch(`${API_BASE}/optimize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${id_token}` },
+    body: JSON.stringify({
+      resume_id: resumeId,
+      job_description_text: jobDescriptionText,
+      target_match_percent: targetMatchPercent,
+      one_page: onePage,
+      save_as_new_copy: saveAsNewCopy,
+    }),
+  });
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      await chrome.storage.local.remove(['id_token', 'access_token']);
+      throw new Error('your session expired — please log in again');
+    }
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || 'optimize failed');
+  }
+  return response.json();
+}
+
 // Runs inside the page (via executeScript) to decide if this looks like a
 // job description/posting page, as opposed to an application form or an
 // unrelated page - self-contained, no closures over background.js state,
@@ -154,6 +205,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === 'CHECK_LOGIN') {
     isLoggedIn().then((loggedIn) => sendResponse({ loggedIn }));
+    return true;
+  }
+  if (message.type === 'GET_DOCX_RESUMES') {
+    getDocxResumes()
+      .then((resumes) => sendResponse({ ok: true, resumes }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (message.type === 'OPTIMIZE') {
+    optimizeResume(message.payload)
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }
 });

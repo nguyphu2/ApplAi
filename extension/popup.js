@@ -1,77 +1,38 @@
 const loginBtn = document.getElementById('login-btn');
 const logoutBtn = document.getElementById('logout-btn');
-const fillBtn = document.getElementById('fill-btn');
-const notJobPageEl = document.getElementById('not-job-page');
+const optimizerForm = document.getElementById('optimizer-form');
+const resumeSelect = document.getElementById('resume-select');
+const matchSlider = document.getElementById('match-slider');
+const matchSliderValue = document.getElementById('match-slider-value');
+const saveAsNewToggle = document.getElementById('save-as-new-toggle');
+const onePageToggle = document.getElementById('one-page-toggle');
+const optimizeBtn = document.getElementById('optimize-btn');
+const notJobDescriptionPageEl = document.getElementById('not-job-description-page');
+const noResumesEl = document.getElementById('no-resumes');
+const resultEl = document.getElementById('result');
 const statusEl = document.getElementById('status');
-
-const fillProgressEl = document.getElementById('fill-progress');
-const fillStateIcon = document.getElementById('fill-state-icon');
-const fillStateLabel = document.getElementById('fill-state-label');
-const fieldsProgressTrack = document.getElementById('fields-progress-track');
-const fieldsProgressFill = document.getElementById('fields-progress-fill');
-const fieldsProgressCount = document.getElementById('fields-progress-count');
-const requiredProgressTrack = document.getElementById('required-progress-track');
-const requiredProgressFill = document.getElementById('required-progress-fill');
-const requiredProgressCount = document.getElementById('required-progress-count');
 
 function sendMessage(message) {
   return new Promise((resolve) => chrome.runtime.sendMessage(message, resolve));
 }
 
-async function getCurrentTabId() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab ? tab.id : null;
-}
-
-let currentTabId = null;
-
-function setLoggedInUI(loggedIn, isJobPage) {
+function setLoggedInUI(loggedIn) {
   loginBtn.classList.toggle('hidden', loggedIn);
   logoutBtn.classList.toggle('hidden', !loggedIn);
-  fillBtn.classList.toggle('hidden', !loggedIn || !isJobPage);
-  notJobPageEl.classList.toggle('hidden', !loggedIn || isJobPage);
+  optimizerForm.classList.toggle('hidden', !loggedIn);
 }
 
-function setBar(trackEl, fillEl, countEl, done, total) {
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-  fillEl.style.width = `${pct}%`;
-  countEl.textContent = `${done} / ${total}`;
-  trackEl.classList.remove('indeterminate');
-}
-
-function startFillProgress() {
-  fillProgressEl.classList.remove('hidden');
-  fillStateIcon.classList.remove('done');
-  fillStateIcon.textContent = '…';
-  fillStateLabel.textContent = 'Filling this page...';
-  fieldsProgressTrack.classList.add('indeterminate');
-  requiredProgressTrack.classList.add('indeterminate');
-  fieldsProgressCount.textContent = '0 / 0';
-  requiredProgressCount.textContent = '0 / 0';
-  fillBtn.disabled = true;
-}
-
-function finishFillProgress(message) {
-  fillProgressEl.classList.remove('hidden');
-  fillStateIcon.classList.add('done');
-  fillStateIcon.textContent = '✓';
-  fillStateLabel.textContent = message.remoteError ? 'Filled what it could' : 'Done';
-
-  const totalFilled = message.filled + (message.remoteFilled || 0);
-  setBar(fieldsProgressTrack, fieldsProgressFill, fieldsProgressCount, totalFilled, message.total);
-  setBar(requiredProgressTrack, requiredProgressFill, requiredProgressCount, message.requiredFilled || 0, message.requiredTotal || 0);
-
-  fillBtn.disabled = false;
-  statusEl.textContent = message.remoteError ? `${message.filled} filled locally; ${message.remoteError}.` : '';
-}
+matchSlider.addEventListener('input', () => {
+  matchSliderValue.textContent = `${matchSlider.value}%`;
+});
 
 loginBtn.addEventListener('click', async () => {
   statusEl.textContent = 'Logging in...';
   const result = await sendMessage({ type: 'LOGIN' });
   if (result.ok) {
     statusEl.textContent = '';
-    const { isJobPage } = await sendMessage({ type: 'CHECK_JOB_PAGE' });
-    setLoggedInUI(true, isJobPage);
+    setLoggedInUI(true);
+    await init();
   } else {
     statusEl.textContent = result.error || 'Login failed.';
   }
@@ -79,47 +40,70 @@ loginBtn.addEventListener('click', async () => {
 
 logoutBtn.addEventListener('click', async () => {
   await sendMessage({ type: 'LOGOUT' });
-  setLoggedInUI(false, false);
+  setLoggedInUI(false);
   statusEl.textContent = '';
-  fillProgressEl.classList.add('hidden');
+  resultEl.classList.add('hidden');
 });
 
-(async function init() {
-  currentTabId = await getCurrentTabId();
+optimizeBtn.addEventListener('click', async () => {
+  const resumeId = resumeSelect.value;
+  if (!resumeId) {
+    statusEl.textContent = 'Choose a resume first.';
+    return;
+  }
+  statusEl.textContent = '';
+  resultEl.classList.add('hidden');
+  optimizeBtn.disabled = true;
+  optimizeBtn.textContent = 'Optimizing...';
+  const response = await sendMessage({
+    type: 'OPTIMIZE',
+    payload: {
+      resumeId,
+      targetMatchPercent: Number(matchSlider.value),
+      onePage: onePageToggle.checked,
+      saveAsNewCopy: saveAsNewToggle.checked,
+    },
+  });
+  optimizeBtn.disabled = false;
+  optimizeBtn.textContent = 'Optimize';
+  if (!response.ok) {
+    statusEl.textContent = response.error || 'Optimize failed.';
+    return;
+  }
+  const { match_score_before, match_score_after, missing_keywords, red_flags, filename } = response.result;
+  resultEl.innerHTML = `
+    <div class="score-row"><span class="before">${match_score_before}%</span> &rarr; <span class="after">${match_score_after}% match</span></div>
+    <div>${saveAsNewToggle.checked ? 'Saved as' : 'Updated'}: ${filename}</div>
+    <h4>Missing keywords (before)</h4>
+    <ul>${missing_keywords.map((k) => `<li>${k}</li>`).join('')}</ul>
+    <h4>Red flags (before)</h4>
+    <ul>${red_flags.map((f) => `<li>${f}</li>`).join('')}</ul>
+  `;
+  resultEl.classList.remove('hidden');
+});
+
+async function init() {
   const { loggedIn } = await sendMessage({ type: 'CHECK_LOGIN' });
-  const isJobPage = loggedIn ? (await sendMessage({ type: 'CHECK_JOB_PAGE' })).isJobPage : false;
-  setLoggedInUI(loggedIn, isJobPage);
-  // Progress is per-tab and only meaningful on a job application page -
-  // an old result from a job page you've since navigated away from
-  // shouldn't linger and show on whatever page you're on now.
-  if (loggedIn && isJobPage && currentTabId != null) {
-    const { fillInProgressTabs, fillResults } = await chrome.storage.local.get(['fillInProgressTabs', 'fillResults']);
-    if (fillInProgressTabs && fillInProgressTabs[currentTabId]) {
-      // A fill is still waiting on content.js/the /autofill round-trip
-      // from before this popup instance existed - show the same live
-      // state a fresh click would, and leave the button disabled so a
-      // second fill can't be started on top of it (see the FILL handler
-      // in background.js for what that race does).
-      startFillProgress();
-    } else if (fillResults && fillResults[currentTabId]) {
-      finishFillProgress(fillResults[currentTabId]);
-    }
-  }
-})();
+  setLoggedInUI(loggedIn);
+  if (!loggedIn) return;
 
-fillBtn.addEventListener('click', async () => {
-  statusEl.textContent = '';
-  startFillProgress();
-  const result = await sendMessage({ type: 'FILL' });
-  if (!result.ok) {
-    fillProgressEl.classList.add('hidden');
-    fillBtn.disabled = false;
-    statusEl.textContent = result.error || 'Fill failed.';
-  }
-});
+  const { isJobDescriptionPage } = await sendMessage({ type: 'CHECK_JOB_DESCRIPTION_PAGE' });
+  notJobDescriptionPageEl.classList.toggle('hidden', isJobDescriptionPage);
+  optimizerForm.classList.toggle('hidden', !isJobDescriptionPage);
+  if (!isJobDescriptionPage) return;
 
-chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === 'FILL_RESULT' && message.tabId === currentTabId) {
-    finishFillProgress(message);
+  const resumesResponse = await sendMessage({ type: 'GET_DOCX_RESUMES' });
+  if (!resumesResponse.ok) {
+    statusEl.textContent = resumesResponse.error || 'Could not load resumes.';
+    return;
   }
-});
+  const resumes = resumesResponse.resumes;
+  if (resumes.length === 0) {
+    noResumesEl.classList.remove('hidden');
+    optimizerForm.classList.add('hidden');
+    return;
+  }
+  resumeSelect.innerHTML = resumes.map((r) => `<option value="${r.id}">${r.filename}</option>`).join('');
+}
+
+init();

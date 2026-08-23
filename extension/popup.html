@@ -15,7 +15,6 @@
       --navy: #0a1f44;
       --text: #0a1330;
       --text-muted: #5b6580;
-      --border: #0a1f44;
       --success: #1a7a4c;
       --notch-sm: 4px;
     }
@@ -49,10 +48,44 @@
     }
 
     .brand h1 {
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       font-weight: 400;
       color: var(--navy);
       margin: 0;
+    }
+
+    label {
+      display: block;
+      font-size: 0.58rem;
+      color: var(--text-muted);
+      margin: 0.9rem 0 0.4rem;
+    }
+
+    select {
+      width: 100%;
+      font-family: inherit;
+      font-size: 0.6rem;
+      padding: 0.6rem;
+      border: 2px solid var(--navy);
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+
+    .slider-value {
+      font-size: 0.6rem;
+      color: var(--text);
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 0.9rem;
+      font-size: 0.6rem;
     }
 
     button {
@@ -62,7 +95,7 @@
       font-size: 0.62rem;
       line-height: 1.4;
       padding: 0.75rem 0.8rem;
-      margin-top: 0.6rem;
+      margin-top: 0.9rem;
       border: 3px solid var(--navy);
       background: var(--blue);
       color: #ffffff;
@@ -98,104 +131,50 @@
       border-color: var(--blue);
     }
 
-    button.secondary:hover {
-      background: var(--panel-bg-alt);
-      filter: drop-shadow(3px 3px 0 var(--navy)) brightness(0.97);
-    }
-
     .hidden {
       display: none;
     }
 
-    #fill-progress {
+    #result {
       margin-top: 1rem;
       padding-top: 0.9rem;
       border-top: 2px solid var(--panel-bg-alt);
-    }
-
-    .progress-block {
-      margin-top: 0.9rem;
-    }
-
-    .progress-block:first-child {
-      margin-top: 0;
-    }
-
-    .progress-heading {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-size: 0.58rem;
-      color: var(--text-muted);
-      margin-bottom: 0.4rem;
-    }
-
-    .progress-count {
-      color: var(--text);
-    }
-
-    .progress-track {
-      height: 12px;
-      border: 2px solid var(--navy);
-      background: var(--panel-bg-alt);
-      overflow: hidden;
-      position: relative;
-    }
-
-    .progress-fill {
-      height: 100%;
-      width: 0%;
-      background: var(--blue);
-      transition: width 0.35s ease;
-    }
-
-    .progress-fill.required {
-      background: var(--blue-dark);
-    }
-
-    .progress-track.indeterminate .progress-fill {
-      width: 35%;
-      background: var(--blue);
-      animation: applai-indeterminate 1s linear infinite;
-    }
-
-    @keyframes applai-indeterminate {
-      0% { transform: translateX(-100%); }
-      100% { transform: translateX(285%); }
-    }
-
-    .fill-state {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
       font-size: 0.6rem;
     }
 
-    .fill-state-icon {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 16px;
-      height: 16px;
-      flex-shrink: 0;
-      border: 2px solid var(--navy);
-      color: #ffffff;
-      background: var(--blue);
-      font-size: 0.55rem;
+    .score-row {
+      display: flex;
+      align-items: baseline;
+      gap: 0.6rem;
+      font-size: 0.85rem;
     }
 
-    .fill-state-icon.done {
-      background: var(--success);
+    .score-row .before {
+      color: var(--text-muted);
+      text-decoration: line-through;
+      font-size: 0.65rem;
+    }
+
+    .score-row .after {
+      color: var(--success);
+    }
+
+    #result h4 {
+      font-size: 0.58rem;
+      color: var(--text-muted);
+      margin: 0.7rem 0 0.3rem;
+    }
+
+    #result ul {
+      margin: 0;
+      padding-left: 1rem;
+    }
+
+    #result li {
+      margin-bottom: 0.3rem;
     }
 
     #status {
-      font-size: 0.55rem;
-      line-height: 1.7;
-      color: var(--text-muted);
-      margin: 0.8rem 0 0;
-    }
-
-    #not-job-page {
       font-size: 0.55rem;
       line-height: 1.7;
       color: var(--text-muted);
@@ -206,40 +185,34 @@
 <body>
   <div class="brand">
     <img src="icons/icon128.png" alt="ApplAI logo" />
-    <h1>ApplAI Autofill</h1>
+    <h1>ApplAI Resume Optimizer</h1>
   </div>
   <button id="login-btn">Log in</button>
   <button id="logout-btn" class="secondary hidden">Log out</button>
-  <button id="fill-btn" class="hidden">Fill this page</button>
-  <p id="not-job-page" class="hidden">This doesn't look like a job application page, so Fill is turned off here.</p>
 
-  <div id="fill-progress" class="hidden">
-    <div class="progress-block">
-      <div class="fill-state">
-        <span id="fill-state-icon" class="fill-state-icon">…</span>
-        <span id="fill-state-label">Filling this page...</span>
-      </div>
+  <div id="optimizer-form" class="hidden">
+    <label for="resume-select">Resume</label>
+    <select id="resume-select"></select>
+
+    <label for="match-slider">Target keyword match: <span id="match-slider-value" class="slider-value">70%</span></label>
+    <input type="range" id="match-slider" min="0" max="100" value="70" />
+
+    <div class="toggle-row">
+      <label for="save-as-new-toggle" style="margin:0;">Save as new copy</label>
+      <input type="checkbox" id="save-as-new-toggle" />
     </div>
-    <div class="progress-block">
-      <div class="progress-heading">
-        <span>Fields answered</span>
-        <span id="fields-progress-count" class="progress-count">0 / 0</span>
-      </div>
-      <div id="fields-progress-track" class="progress-track">
-        <div id="fields-progress-fill" class="progress-fill"></div>
-      </div>
+    <div class="toggle-row">
+      <label for="one-page-toggle" style="margin:0;">Keep to 1 page</label>
+      <input type="checkbox" id="one-page-toggle" checked />
     </div>
-    <div class="progress-block">
-      <div class="progress-heading">
-        <span>Required fields</span>
-        <span id="required-progress-count" class="progress-count">0 / 0</span>
-      </div>
-      <div id="required-progress-track" class="progress-track">
-        <div id="required-progress-fill" class="progress-fill required"></div>
-      </div>
-    </div>
+
+    <button id="optimize-btn">Optimize</button>
   </div>
 
+  <p id="not-job-description-page" class="hidden">This doesn't look like a job description page, so the optimizer is turned off here.</p>
+  <p id="no-resumes" class="hidden">No DOCX resumes on your profile yet — upload one on the ApplAI website first.</p>
+
+  <div id="result" class="hidden"></div>
   <p id="status"></p>
   <script src="popup.js"></script>
 </body>

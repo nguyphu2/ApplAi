@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "ApplAI Autofill",
+  "name": "ApplAI Resume Optimizer",
   "version": "0.1.0",
-  "description": "Fill out job application forms using your saved ApplAI profile.",
+  "description": "Optimize your resume for a job description using your saved ApplAI profile.",
   "action": {
     "default_popup": "popup.html",
     "default_icon": "icons/icon128.png"
