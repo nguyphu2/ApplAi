@@ -285,6 +285,45 @@
     }
 
     const { options, selectedIndex } = await readComboboxOptions(combo);
+
+    // Some INPUT-tagged "comboboxes" are really just free-text fields with
+    // type-ahead suggestions (e.g. Google Places-style address autocomplete)
+    // - their aria-controls/aria-owns target only gets created once the
+    // user starts typing, so at scan time there's no listbox and no
+    // options at all. Routing these through the dropdown-only path would
+    // send an empty option list to Claude, and the backend's own "value
+    // must be one of the listed options" check would then reject anything
+    // it tries - silently leaving the field blank forever. Fall back to
+    // treating it exactly like a plain text input instead.
+    if (combo.tagName === 'INPUT' && options.length === 0) {
+      if (isExcludedField(labelText, combo.name || '', combo.id || '')) {
+        continue;
+      }
+      const descriptor = { label: labelText, name: combo.name || '', id: combo.id || '', placeholder: combo.placeholder || '' };
+      const match = matchField(descriptor, profile);
+      if (match) {
+        fillField(combo, match.value);
+        filled += 1;
+        if (required) {
+          requiredFilled += 1;
+        }
+      } else {
+        const fieldId = 'applai-field-' + runId + '-' + nextFieldId;
+        nextFieldId += 1;
+        combo.setAttribute('data-applai-field-id', fieldId);
+        unmatched.push({
+          field_id: fieldId,
+          label: descriptor.label,
+          name: descriptor.name,
+          id: descriptor.id,
+          placeholder: descriptor.placeholder,
+          type: 'text',
+          required,
+        });
+      }
+      continue;
+    }
+
     // Index 0 is this widget's placeholder ("--", "Select...") - matches
     // the same untouched/default convention used for native <select> above.
     if (selectedIndex > 0) {
