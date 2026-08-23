@@ -213,6 +213,10 @@ async function scrapeJobDescription(tabId) {
   });
 }
 
+chrome.tabs.onRemoved.addListener((tabId) => {
+  chrome.storage.local.remove(`optimizeResult_${tabId}`);
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'CHECK_JOB_DESCRIPTION_PAGE') {
     checkJobDescriptionPage().then((isJobDescriptionPage) => sendResponse({ isJobDescriptionPage }));

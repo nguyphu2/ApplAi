@@ -16,6 +16,32 @@ function sendMessage(message) {
   return new Promise((resolve) => chrome.runtime.sendMessage(message, resolve));
 }
 
+async function getActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab;
+}
+
+function resultStorageKey(tabId) {
+  return `optimizeResult_${tabId}`;
+}
+
+async function restoreStoredResult(tab) {
+  if (!tab) return;
+  const key = resultStorageKey(tab.id);
+  const stored = await chrome.storage.local.get(key);
+  const entry = stored[key];
+  if (entry && entry.pageUrl === tab.url) {
+    buildResultPanel(entry.result);
+    resultEl.classList.remove('hidden');
+  }
+}
+
+async function saveStoredResult(tab, result) {
+  if (!tab) return;
+  const key = resultStorageKey(tab.id);
+  await chrome.storage.local.set({ [key]: { pageUrl: tab.url, result } });
+}
+
 function setLoggedInUI(loggedIn) {
   loginBtn.classList.toggle('hidden', loggedIn);
   logoutBtn.classList.toggle('hidden', !loggedIn);
@@ -70,43 +96,61 @@ optimizeBtn.addEventListener('click', async () => {
     statusEl.textContent = response.error || 'Optimize failed.';
     return;
   }
-  buildResultPanel({ ...response.result, savedAsNew: saveAsNewToggle.checked });
+  const result = { ...response.result, savedAsNew: saveAsNewToggle.checked };
+  buildResultPanel(result);
   resultEl.classList.remove('hidden');
+  const tab = await getActiveTab();
+  await saveStoredResult(tab, result);
 });
 
 function buildResultPanel({ match_score_before, match_score_after, missing_keywords, red_flags, filename, savedAsNew }) {
   resultEl.innerHTML = '';
 
-  const scoreRow = document.createElement('div');
-  scoreRow.className = 'score-row';
-  const before = document.createElement('span');
-  before.className = 'before';
-  before.textContent = `${match_score_before}%`;
-  const after = document.createElement('span');
-  after.className = 'after';
-  after.textContent = `${match_score_after}% match`;
-  scoreRow.append(before, ' → ', after);
-  resultEl.appendChild(scoreRow);
-
   const savedLine = document.createElement('div');
   savedLine.textContent = `${savedAsNew ? 'Saved as' : 'Updated'}: ${filename}`;
   resultEl.appendChild(savedLine);
 
-  function appendList(heading, items) {
-    const h = document.createElement('h4');
-    h.textContent = heading;
-    resultEl.appendChild(h);
+  function appendBar(label, value, fillClass) {
+    const labelRow = document.createElement('div');
+    labelRow.className = 'bar-label';
+    const labelText = document.createElement('span');
+    labelText.textContent = label;
+    const valueText = document.createElement('span');
+    valueText.textContent = `${value}%`;
+    labelRow.append(labelText, valueText);
+    resultEl.appendChild(labelRow);
+
+    const track = document.createElement('div');
+    track.className = 'bar-track';
+    const fill = document.createElement('div');
+    fill.className = `bar-fill ${fillClass}`;
+    fill.style.width = `${value}%`;
+    track.appendChild(fill);
+    resultEl.appendChild(track);
+  }
+
+  appendBar('Before match', match_score_before, 'before');
+  appendBar('After match', match_score_after, 'after');
+
+  function appendDropdown(heading, items, listClass) {
+    const details = document.createElement('details');
+    details.className = 'dropdown';
+    const summary = document.createElement('summary');
+    summary.textContent = `${heading} (${items.length})`;
+    details.appendChild(summary);
     const ul = document.createElement('ul');
+    ul.className = listClass;
     for (const item of items) {
       const li = document.createElement('li');
       li.textContent = item;
       ul.appendChild(li);
     }
-    resultEl.appendChild(ul);
+    details.appendChild(ul);
+    resultEl.appendChild(details);
   }
 
-  appendList('Missing keywords (before)', missing_keywords);
-  appendList('Red flags (before)', red_flags);
+  appendDropdown('Missing keywords', missing_keywords, 'missing-keywords');
+  appendDropdown('Red flags', red_flags, 'red-flags');
 }
 
 async function init() {
@@ -118,6 +162,9 @@ async function init() {
   notJobDescriptionPageEl.classList.toggle('hidden', isJobDescriptionPage);
   optimizerForm.classList.toggle('hidden', !isJobDescriptionPage);
   if (!isJobDescriptionPage) return;
+
+  const tab = await getActiveTab();
+  await restoreStoredResult(tab);
 
   const resumesResponse = await sendMessage({ type: 'GET_DOCX_RESUMES' });
   if (!resumesResponse.ok) {
