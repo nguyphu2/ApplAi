@@ -11,6 +11,7 @@ const notJobDescriptionPageEl = document.getElementById('not-job-description-pag
 const noResumesEl = document.getElementById('no-resumes');
 const resultEl = document.getElementById('result');
 const statusEl = document.getElementById('status');
+const progressEl = document.getElementById('optimize-progress');
 
 function sendMessage(message) {
   return new Promise((resolve) => chrome.runtime.sendMessage(message, resolve));
@@ -42,6 +43,70 @@ async function saveStoredResult(tab, result) {
   await chrome.storage.local.set({ [key]: { pageUrl: tab.url, result } });
 }
 
+function settingsStorageKey(tabId) {
+  return `optimizeSettings_${tabId}`;
+}
+
+async function restoreStoredSettings(tab) {
+  if (!tab) return;
+  const key = settingsStorageKey(tab.id);
+  const stored = await chrome.storage.local.get(key);
+  const entry = stored[key];
+  if (entry && entry.pageUrl === tab.url) {
+    matchSlider.value = entry.targetMatchPercent;
+    matchSliderValue.textContent = `${entry.targetMatchPercent}%`;
+    onePageToggle.checked = entry.onePage;
+    saveAsNewToggle.checked = entry.saveAsNewCopy;
+  }
+}
+
+async function saveStoredSettings() {
+  const tab = await getActiveTab();
+  if (!tab) return;
+  const key = settingsStorageKey(tab.id);
+  await chrome.storage.local.set({
+    [key]: {
+      pageUrl: tab.url,
+      targetMatchPercent: Number(matchSlider.value),
+      onePage: onePageToggle.checked,
+      saveAsNewCopy: saveAsNewToggle.checked,
+    },
+  });
+}
+
+const PROGRESS_CELL_COUNT = 8;
+let progressCells = [];
+let progressInterval = null;
+
+function buildProgressCells() {
+  progressEl.innerHTML = '';
+  progressCells = [];
+  for (let i = 0; i < PROGRESS_CELL_COUNT; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    progressEl.appendChild(cell);
+    progressCells.push(cell);
+  }
+}
+buildProgressCells();
+
+function startProgressAnimation() {
+  progressEl.classList.remove('hidden');
+  let index = 0;
+  progressCells.forEach((cell) => cell.classList.remove('active'));
+  progressInterval = setInterval(() => {
+    progressCells.forEach((cell) => cell.classList.remove('active'));
+    progressCells[index].classList.add('active');
+    index = (index + 1) % progressCells.length;
+  }, 150);
+}
+
+function stopProgressAnimation() {
+  clearInterval(progressInterval);
+  progressEl.classList.add('hidden');
+  progressCells.forEach((cell) => cell.classList.remove('active'));
+}
+
 function setLoggedInUI(loggedIn) {
   loginBtn.classList.toggle('hidden', loggedIn);
   logoutBtn.classList.toggle('hidden', !loggedIn);
@@ -51,6 +116,9 @@ function setLoggedInUI(loggedIn) {
 matchSlider.addEventListener('input', () => {
   matchSliderValue.textContent = `${matchSlider.value}%`;
 });
+matchSlider.addEventListener('change', saveStoredSettings);
+saveAsNewToggle.addEventListener('change', saveStoredSettings);
+onePageToggle.addEventListener('change', saveStoredSettings);
 
 loginBtn.addEventListener('click', async () => {
   statusEl.textContent = 'Logging in...';
@@ -81,6 +149,7 @@ optimizeBtn.addEventListener('click', async () => {
   resultEl.classList.add('hidden');
   optimizeBtn.disabled = true;
   optimizeBtn.textContent = 'Optimizing...';
+  startProgressAnimation();
   const response = await sendMessage({
     type: 'OPTIMIZE',
     payload: {
@@ -90,6 +159,7 @@ optimizeBtn.addEventListener('click', async () => {
       saveAsNewCopy: saveAsNewToggle.checked,
     },
   });
+  stopProgressAnimation();
   optimizeBtn.disabled = false;
   optimizeBtn.textContent = 'Optimize';
   if (!response.ok) {
@@ -164,6 +234,7 @@ async function init() {
   if (!isJobDescriptionPage) return;
 
   const tab = await getActiveTab();
+  await restoreStoredSettings(tab);
   await restoreStoredResult(tab);
 
   const resumesResponse = await sendMessage({ type: 'GET_DOCX_RESUMES' });

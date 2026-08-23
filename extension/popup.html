@@ -134,8 +134,37 @@
       border-color: var(--blue);
     }
 
+    button.danger {
+      background: var(--bg);
+      color: var(--red);
+      border-color: var(--red);
+      position: sticky;
+      bottom: 0;
+    }
+
+    button.danger:hover {
+      background: #fdecec;
+    }
+
     .hidden {
       display: none;
+    }
+
+    .pixel-progress {
+      display: flex;
+      gap: 3px;
+      margin-top: 0.9rem;
+    }
+
+    .pixel-progress .cell {
+      flex: 1 1 0;
+      height: 14px;
+      background: var(--panel-bg-alt);
+      border: 1px solid var(--navy);
+    }
+
+    .pixel-progress .cell.active {
+      background: var(--blue);
     }
 
     #result {
@@ -182,7 +211,8 @@
     #result details.dropdown summary {
       cursor: pointer;
       font-size: 0.58rem;
-      color: var(--text-muted);
+      color: var(--text);
+      font-weight: 700;
       outline: none;
     }
 
@@ -217,7 +247,6 @@
     <h1>ApplAI Resume Optimizer</h1>
   </div>
   <button id="login-btn">Log in</button>
-  <button id="logout-btn" class="secondary hidden">Log out</button>
 
   <div id="optimizer-form" class="hidden">
     <label for="resume-select">Resume</label>
@@ -236,6 +265,7 @@
     </div>
 
     <button id="optimize-btn">Optimize</button>
+    <div id="optimize-progress" class="pixel-progress hidden"></div>
   </div>
 
   <p id="not-job-description-page" class="hidden">This doesn't look like a job description page, so the optimizer is turned off here.</p>
@@ -243,6 +273,7 @@
 
   <div id="result" class="hidden"></div>
   <p id="status"></p>
+  <button id="logout-btn" class="danger hidden">Log out</button>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -214,7 +214,7 @@ async function scrapeJobDescription(tabId) {
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  chrome.storage.local.remove(`optimizeResult_${tabId}`);
+  chrome.storage.local.remove([`optimizeResult_${tabId}`, `optimizeSettings_${tabId}`]);
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
