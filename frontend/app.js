@@ -385,8 +385,8 @@ function renderResumeList() {
     resumeListEl.innerHTML = resumes.map((r) => `
       <div class="resume-row" data-resume-id="${r.id}">
         <input type="checkbox" class="resume-checkbox" ${active_resume_ids.includes(r.id) ? 'checked' : ''} />
-        ${r.pdf_url
-          ? `<a class="resume-filename" href="${r.pdf_url}" target="_blank" rel="noopener">${r.filename}</a>`
+        ${r.file_url
+          ? `<a class="resume-filename" href="${r.file_url}" target="_blank" rel="noopener">${r.filename}</a>`
           : `<span class="resume-filename">${r.filename}</span>`}
         <span class="resume-uploaded-at">${new Date(r.uploaded_at).toLocaleDateString()}</span>
         <button type="button" class="secondary resume-remove-btn">Remove</button>
@@ -525,14 +525,14 @@ resumeUploadClearBtn.addEventListener('click', () => {
 resumeUploadBtn.addEventListener('click', async () => {
   const file = resumeUploadInput.files[0];
   if (!file) {
-    profileStatus.textContent = 'Choose a PDF first.';
+    profileStatus.textContent = 'Choose a DOCX first.';
     return;
   }
   resumeUploadBtn.disabled = true;
   resumeUploadBtn.textContent = 'Uploading...';
   try {
-    const resume_pdf_base64 = await fileToBase64(file);
-    profileSettings = await putSettings({ add_resume: { filename: file.name, resume_pdf_base64 } });
+    const resume_docx_base64 = await fileToBase64(file);
+    profileSettings = await putSettings({ add_resume: { filename: file.name, resume_docx_base64 } });
     renderResumeList();
     resumeUploadInput.value = '';
     setResumeUploadButtonsVisible(false);
