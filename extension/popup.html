@@ -170,6 +170,15 @@
       background: var(--blue);
     }
 
+    button.success {
+      background: var(--success, #1a7a4c);
+      border-color: var(--success, #1a7a4c);
+    }
+
+    button.success:disabled {
+      opacity: 1;
+    }
+
     #result {
       margin-top: 1rem;
       padding-top: 0.9rem;
@@ -269,6 +278,7 @@
 
     <button id="optimize-btn">Optimize</button>
     <div id="optimize-progress" class="pixel-progress hidden"></div>
+    <button id="mark-applied-btn" class="secondary">Mark as applied</button>
   </div>
 
   <p id="not-job-description-page" class="hidden">This doesn't look like a job description page, so the optimizer is turned off here.</p>

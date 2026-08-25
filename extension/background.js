@@ -141,6 +141,27 @@ async function optimizeResume({ resumeId, targetMatchPercent, onePage, saveAsNew
   return response.json();
 }
 
+async function markApplied({ title, company, url, resumeId }) {
+  const { id_token } = await chrome.storage.local.get('id_token');
+  if (!id_token) {
+    throw new Error('not logged in');
+  }
+  const response = await fetch(`${API_BASE}/applications`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${id_token}` },
+    body: JSON.stringify({ title, company, url, resume_id: resumeId || null }),
+  });
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      await chrome.storage.local.remove(['id_token', 'access_token']);
+      throw new Error('your session expired — please log in again');
+    }
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || 'mark applied failed');
+  }
+  return response.json();
+}
+
 // Runs inside the page (via executeScript) to decide if this looks like a
 // job description/posting page, as opposed to an application form or an
 // unrelated page - self-contained, no closures over background.js state,
@@ -214,7 +235,7 @@ async function scrapeJobDescription(tabId) {
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  chrome.storage.local.remove([`optimizeResult_${tabId}`, `optimizeSettings_${tabId}`]);
+  chrome.storage.local.remove([`optimizeResult_${tabId}`, `optimizeSettings_${tabId}`, `appliedState_${tabId}`]);
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -245,6 +266,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'OPTIMIZE') {
     optimizeResume(message.payload)
       .then((result) => sendResponse({ ok: true, result }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (message.type === 'MARK_APPLIED') {
+    markApplied(message.payload)
+      .then((application) => sendResponse({ ok: true, application }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }

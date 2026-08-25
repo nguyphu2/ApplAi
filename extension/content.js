@@ -76,6 +76,16 @@
     return best ? best.textContent.trim() : document.body.textContent.trim();
   }
 
+  function guessPageTitle() {
+    const raw = document.title.trim();
+    const separators = [' | ', ' - ', ' — '];
+    for (const sep of separators) {
+      const idx = raw.lastIndexOf(sep);
+      if (idx > 0) return raw.slice(0, idx).trim();
+    }
+    return raw;
+  }
+
   const text = (bestJobPostingBlock() || largestTextBlock()).slice(0, 20000);
-  chrome.runtime.sendMessage({ type: 'JOB_DESCRIPTION_SCRAPED', text, pageTitle: document.title });
+  chrome.runtime.sendMessage({ type: 'JOB_DESCRIPTION_SCRAPED', text, pageTitle: guessPageTitle() });
 })();

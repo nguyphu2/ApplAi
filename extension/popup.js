@@ -7,6 +7,7 @@ const matchSliderValue = document.getElementById('match-slider-value');
 const saveAsNewToggle = document.getElementById('save-as-new-toggle');
 const onePageToggle = document.getElementById('one-page-toggle');
 const optimizeBtn = document.getElementById('optimize-btn');
+const markAppliedBtn = document.getElementById('mark-applied-btn');
 const notJobDescriptionPageEl = document.getElementById('not-job-description-page');
 const noResumesEl = document.getElementById('no-resumes');
 const resultEl = document.getElementById('result');
@@ -173,6 +174,62 @@ optimizeBtn.addEventListener('click', async () => {
   await saveStoredResult(tab, result);
 });
 
+markAppliedBtn.addEventListener('click', async () => {
+  const tab = await getActiveTab();
+  if (!tab) return;
+
+  markAppliedBtn.disabled = true;
+  markAppliedBtn.textContent = 'Marking...';
+
+  const key = resultStorageKey(tab.id);
+  const stored = await chrome.storage.local.get(key);
+  const entry = stored[key];
+  const hasResultForThisPage = entry && entry.pageUrl === tab.url;
+
+  const response = await sendMessage({
+    type: 'MARK_APPLIED',
+    payload: {
+      title: tab.title || 'Untitled posting',
+      company: '',
+      url: tab.url,
+      resumeId: hasResultForThisPage ? (resumeSelect.value || null) : null,
+    },
+  });
+
+  if (!response.ok) {
+    statusEl.textContent = response.error || 'Could not mark as applied.';
+    markAppliedBtn.disabled = false;
+    markAppliedBtn.textContent = 'Mark as applied';
+    return;
+  }
+
+  markAppliedBtn.textContent = '✓ Marked applied';
+  markAppliedBtn.classList.add('success');
+  await saveStoredAppliedState(tab);
+});
+
+function appliedStorageKey(tabId) {
+  return `appliedState_${tabId}`;
+}
+
+async function saveStoredAppliedState(tab) {
+  if (!tab) return;
+  const key = appliedStorageKey(tab.id);
+  await chrome.storage.local.set({ [key]: { pageUrl: tab.url, applied: true } });
+}
+
+async function restoreStoredAppliedState(tab) {
+  if (!tab) return;
+  const key = appliedStorageKey(tab.id);
+  const stored = await chrome.storage.local.get(key);
+  const entry = stored[key];
+  if (entry && entry.pageUrl === tab.url && entry.applied) {
+    markAppliedBtn.textContent = '✓ Marked applied';
+    markAppliedBtn.classList.add('success');
+    markAppliedBtn.disabled = true;
+  }
+}
+
 function buildResultPanel({ match_score_before, match_score_after, missing_keywords, red_flags, filename, savedAsNew }) {
   resultEl.innerHTML = '';
 
@@ -236,6 +293,7 @@ async function init() {
   const tab = await getActiveTab();
   await restoreStoredSettings(tab);
   await restoreStoredResult(tab);
+  await restoreStoredAppliedState(tab);
 
   const resumesResponse = await sendMessage({ type: 'GET_DOCX_RESUMES' });
   if (!resumesResponse.ok) {
