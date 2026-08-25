@@ -851,6 +851,8 @@ input[type="file"]::-webkit-file-upload-button {
   color: var(--text-muted);
   padding: 0.4rem 0.6rem;
   font-size: 0.55rem;
+  display: block;
+  margin-top: 0.5rem;
 }
 
 .job-applied-toggle.applied {

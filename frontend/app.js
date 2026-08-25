@@ -255,6 +255,16 @@ function matchBarColor(score) {
   return MATCH_BAR_SHADES[bucket];
 }
 
+function applicationsByUrl() {
+  const map = new Map();
+  for (const a of applications) map.set(a.url_normalized, a);
+  return map;
+}
+
+function findApplicationByUrl(normalizedUrl) {
+  return applications.find((a) => a.url_normalized === normalizedUrl);
+}
+
 function renderMatches() {
   const allMatches = sortMatches(filterByRelevance(lastMatches), sortBySelect.value);
 
@@ -264,6 +274,7 @@ function renderMatches() {
   }
 
   const matches = allMatches.slice(0, visibleCount);
+  const appliedByUrl = applicationsByUrl();
 
   resultsEl.innerHTML = matches.map((job) => `
     <div class="job-card" data-job-id="${job.job_id}" data-listing-url="${job.listing_url}">
@@ -281,6 +292,7 @@ function renderMatches() {
       ${job.ingested_at ? `<div class="posted-date">${new Date(job.ingested_at).toLocaleDateString()}</div>` : ''}
       <div class="analyze-row">
         <button class="secondary analyze-btn">${isLoggedIn() ? 'Job match analysis' : '🔒 Job match analysis'}</button>
+        <button class="job-applied-toggle${appliedByUrl.has(normalizeUrl(job.listing_url)) ? ' applied' : ''}">${isLoggedIn() ? (appliedByUrl.has(normalizeUrl(job.listing_url)) ? '✓ Applied' : 'Mark applied') : '🔒 Mark applied'}</button>
         <div class="analysis-result"></div>
       </div>
     </div>
@@ -339,6 +351,51 @@ function renderMatches() {
       }
     });
   });
+
+  resultsEl.querySelectorAll('.job-applied-toggle').forEach((btn) => {
+    btn.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      const card = btn.closest('.job-card');
+      const jobId = card.dataset.jobId;
+      const listingUrl = card.dataset.listingUrl;
+      const job = allMatches.find((m) => m.job_id === jobId);
+
+      if (!isLoggedIn()) {
+        showComicBubble(btn, '🔒 Log in or sign up first.');
+        return;
+      }
+
+      const normalized = normalizeUrl(listingUrl);
+      const existing = findApplicationByUrl(normalized);
+
+      btn.disabled = true;
+      try {
+        if (existing) {
+          await deleteApplication(existing.application_id);
+          applications = applications.filter((a) => a.application_id !== existing.application_id);
+          btn.textContent = 'Mark applied';
+          btn.classList.remove('applied');
+        } else {
+          const activeResumeIds = profileSettings.active_resume_ids || [];
+          const resumeId = activeResumeIds.length === 1 ? activeResumeIds[0] : null;
+          const created = await createApplication({
+            title: job.title,
+            company: job.company,
+            url: listingUrl,
+            job_id: jobId,
+            resume_id: resumeId,
+          });
+          applications = [...applications, created];
+          btn.textContent = '✓ Applied';
+          btn.classList.add('applied');
+        }
+      } catch (err) {
+        showComicBubble(btn, "Couldn't update — try again.");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
 }
 
 sortBySelect.addEventListener('change', () => {
@@ -381,6 +438,13 @@ matchForm.addEventListener('submit', async (event) => {
     const skillsText = await buildProfileText();
     const result = await search({ skills_text: skillsText, filters });
     lastMatches = result.matches;
+    if (isLoggedIn() && applications.length === 0) {
+      try {
+        await loadApplications();
+      } catch (err) {
+        console.error('failed to load applications for checkmark matching:', err);
+      }
+    }
     renderMatches();
   } catch (err) {
     renderError(resultsEl, err.message);
