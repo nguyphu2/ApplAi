@@ -45,6 +45,42 @@ export function putSettings(payload) {
   });
 }
 
+export function listApplications() {
+  return request('/applications', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${getIdToken()}` },
+  });
+}
+
+export function createApplication(payload) {
+  return request('/applications', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getIdToken()}`,
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateApplicationStatus(applicationId, status) {
+  return request(`/applications/${applicationId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getIdToken()}`,
+    },
+    body: JSON.stringify({ status }),
+  });
+}
+
+export function deleteApplication(applicationId) {
+  return request(`/applications/${applicationId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${getIdToken()}` },
+  });
+}
+
 export function autocompleteLocation(query) {
   return request('/match', {
     method: 'POST',

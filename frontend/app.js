@@ -1,18 +1,21 @@
 import { login, logout, handleCallback, isLoggedIn } from './auth.js';
-import { search, analyze, getSettings, putSettings, autocompleteLocation } from './api.js';
+import { search, analyze, getSettings, putSettings, autocompleteLocation, listApplications, createApplication, updateApplicationStatus, deleteApplication } from './api.js';
 
 const loginBtn = document.getElementById('login-btn');
 const logoutBtn = document.getElementById('logout-btn');
 const tabSearch = document.getElementById('tab-search');
 const tabProfile = document.getElementById('tab-profile');
-const tabQuestions = document.getElementById('tab-questions');
+const tabApplications = document.getElementById('tab-applications');
 const searchSection = document.getElementById('search-section');
 const profileSection = document.getElementById('profile-section');
-const questionsSection = document.getElementById('questions-section');
+const applicationsSection = document.getElementById('applications-section');
 const profileLoggedOut = document.getElementById('profile-logged-out');
 const profileLoggedIn = document.getElementById('profile-logged-in');
-const questionsLoggedOut = document.getElementById('questions-logged-out');
-const questionsLoggedIn = document.getElementById('questions-logged-in');
+const applicationsLoggedOut = document.getElementById('applications-logged-out');
+const applicationsLoggedIn = document.getElementById('applications-logged-in');
+const applicationsStatsEl = document.getElementById('applications-stats');
+const applicationsTableBody = document.getElementById('applications-table-body');
+const applicationsEmptyEl = document.getElementById('applications-empty');
 const profileSkillsText = document.getElementById('profile-skills-text');
 const profileStatus = document.getElementById('profile-status');
 const saveSkillsBtn = document.getElementById('save-skills-btn');
@@ -78,6 +81,17 @@ let lastMatches = [];
 let profileSettings = { skills_text: '', filters: {}, resumes: [], active_resume_ids: [] };
 const RESULTS_PAGE_SIZE = 10;
 let visibleCount = RESULTS_PAGE_SIZE;
+let applications = [];
+const STATUS_LIST = ['Applied', '1st Stage', '2nd Stage', '3rd Stage', 'Offer', 'Offer Declined', 'Rejected'];
+
+function normalizeUrl(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    return (u.host.toLowerCase() + u.pathname).replace(/\/$/, '');
+  } catch {
+    return rawUrl.trim().toLowerCase();
+  }
+}
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -373,6 +387,76 @@ matchForm.addEventListener('submit', async (event) => {
   }
 });
 
+// --- Applications tab ---
+
+function renderApplicationsStats() {
+  const counts = { Applied: applications.length };
+  for (const status of STATUS_LIST.slice(1)) {
+    counts[status] = applications.filter((a) => a.status === status).length;
+  }
+  applicationsStatsEl.innerHTML = STATUS_LIST.map((status) => `
+    <div class="applications-stat-tile">
+      <span class="stat-value">${counts[status]}</span>
+      <span class="stat-label">${status}</span>
+    </div>
+  `).join('');
+}
+
+function renderApplicationsTable() {
+  applicationsEmptyEl.classList.toggle('hidden', applications.length > 0);
+  const sorted = [...applications].sort((a, b) => (b.applied_at || '').localeCompare(a.applied_at || ''));
+
+  applicationsTableBody.innerHTML = sorted.map((a) => {
+    const resume = profileSettings.resumes.find((r) => r.id === a.resume_id);
+    return `
+      <tr data-application-id="${a.application_id}">
+        <td>${a.company || '—'}</td>
+        <td><a href="${a.url}" target="_blank" rel="noopener">${a.title}</a></td>
+        <td>
+          <select class="application-status-select">
+            ${STATUS_LIST.map((s) => `<option value="${s}" ${s === a.status ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+        </td>
+        <td>${resume ? resume.filename : '—'}</td>
+        <td>${a.applied_at ? new Date(a.applied_at).toLocaleDateString() : '—'}</td>
+        <td><button type="button" class="secondary delete-btn application-remove-btn">Remove</button></td>
+      </tr>
+    `;
+  }).join('');
+
+  applicationsTableBody.querySelectorAll('tr').forEach((row) => {
+    const applicationId = row.dataset.applicationId;
+
+    row.querySelector('.application-status-select').addEventListener('change', async (event) => {
+      try {
+        const updated = await updateApplicationStatus(applicationId, event.target.value);
+        applications = applications.map((a) => (a.application_id === applicationId ? updated : a));
+        renderApplicationsStats();
+      } catch (err) {
+        console.error('failed to update application status:', err);
+      }
+    });
+
+    row.querySelector('.application-remove-btn').addEventListener('click', async () => {
+      try {
+        await deleteApplication(applicationId);
+        applications = applications.filter((a) => a.application_id !== applicationId);
+        renderApplicationsStats();
+        renderApplicationsTable();
+        if (lastMatches.length > 0) renderMatches();
+      } catch (err) {
+        console.error('failed to delete application:', err);
+      }
+    });
+  });
+}
+
+async function loadApplications() {
+  applications = (await listApplications()).applications;
+  renderApplicationsStats();
+  renderApplicationsTable();
+}
+
 // --- Profile tab ---
 
 function renderResumeList() {
@@ -548,17 +632,23 @@ resumeUploadBtn.addEventListener('click', async () => {
 function showTab(name) {
   searchSection.classList.toggle('hidden', name !== 'search');
   profileSection.classList.toggle('hidden', name !== 'profile');
-  questionsSection.classList.toggle('hidden', name !== 'questions');
+  applicationsSection.classList.toggle('hidden', name !== 'applications');
   tabSearch.classList.toggle('active', name === 'search');
   tabProfile.classList.toggle('active', name === 'profile');
-  tabQuestions.classList.toggle('active', name === 'questions');
+  tabApplications.classList.toggle('active', name === 'applications');
 }
 
 tabSearch.addEventListener('click', () => showTab('search'));
-tabQuestions.addEventListener('click', () => {
-  showTab('questions');
-  questionsLoggedOut.classList.toggle('hidden', isLoggedIn());
-  questionsLoggedIn.classList.toggle('hidden', !isLoggedIn());
+tabApplications.addEventListener('click', async () => {
+  showTab('applications');
+  applicationsLoggedOut.classList.toggle('hidden', isLoggedIn());
+  applicationsLoggedIn.classList.toggle('hidden', !isLoggedIn());
+  if (!isLoggedIn()) return;
+  try {
+    await loadApplications();
+  } catch (err) {
+    console.error('failed to load applications:', err);
+  }
 });
 tabProfile.addEventListener('click', async () => {
   showTab('profile');

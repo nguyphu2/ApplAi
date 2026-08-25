@@ -25,7 +25,7 @@
       <nav class="sidebar-nav">
         <button id="tab-search" class="active">Search</button>
         <button id="tab-profile">My Profile</button>
-        <button id="tab-questions">Question Bank</button>
+        <button id="tab-applications">Applications</button>
       </nav>
     </aside>
 
@@ -182,13 +182,29 @@
         </div>
       </section>
 
-      <section id="questions-section" class="hidden">
-        <div id="questions-logged-out" class="locked-panel">
+      <section id="applications-section" class="hidden">
+        <div id="applications-logged-out" class="locked-panel">
           <img class="lock-icon" src="lock-pixel.png" alt="Locked" />
-          <p>Log in to view the question bank.</p>
+          <p>Log in to view your applications.</p>
         </div>
-        <div id="questions-logged-in" class="hidden">
-          <p>Question bank is coming soon.</p>
+        <div id="applications-logged-in" class="hidden">
+          <div id="applications-stats" class="applications-stats"></div>
+          <div id="applications-table-wrap">
+            <table id="applications-table">
+              <thead>
+                <tr>
+                  <th>Company</th>
+                  <th>Title</th>
+                  <th>Status</th>
+                  <th>Resume</th>
+                  <th>Applied</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="applications-table-body"></tbody>
+            </table>
+            <p id="applications-empty" class="hidden">No applications tracked yet — mark a job as applied from your search results or the extension.</p>
+          </div>
         </div>
       </section>
     </main>

@@ -10,6 +10,7 @@
   --text-muted: #5b6580;
   --border: #0a1f44;
   --error: #a4262c;
+  --success: #1a7a4c;
   --error-bg: #fdf1f1;
   --error-border: #a4262c;
   --notch: 8px;
@@ -796,4 +797,64 @@ input[type="file"]::-webkit-file-upload-button {
 
 #filters-reset:active {
   transform: none;
+}
+
+.applications-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.8rem;
+  margin-bottom: 1.5rem;
+}
+
+.applications-stat-tile {
+  border: 2px solid var(--border);
+  padding: 0.8rem;
+  text-align: center;
+}
+
+.applications-stat-tile .stat-value {
+  font-size: 1.3rem;
+  color: var(--blue-bright);
+  display: block;
+}
+
+.applications-stat-tile .stat-label {
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  display: block;
+  margin-top: 0.3rem;
+}
+
+#applications-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.6rem;
+}
+
+#applications-table th,
+#applications-table td {
+  text-align: left;
+  padding: 0.6rem 0.5rem;
+  border-bottom: 2px solid var(--panel-bg-alt);
+}
+
+#applications-table select {
+  font-family: inherit;
+  font-size: 0.55rem;
+  padding: 0.3rem;
+}
+
+.job-applied-toggle {
+  cursor: pointer;
+  border: 2px solid var(--border);
+  background: var(--panel-bg-alt);
+  color: var(--text-muted);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.55rem;
+}
+
+.job-applied-toggle.applied {
+  background: var(--success);
+  color: #ffffff;
+  border-color: var(--success);
 }
