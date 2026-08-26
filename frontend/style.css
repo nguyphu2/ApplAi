@@ -799,30 +799,71 @@ input[type="file"]::-webkit-file-upload-button {
   transform: none;
 }
 
-.applications-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 0.8rem;
+.applications-funnel {
   margin-bottom: 1.5rem;
 }
 
-.applications-stat-tile {
-  border: 2px solid var(--border);
-  padding: 0.8rem;
-  text-align: center;
-}
-
-.applications-stat-tile .stat-value {
-  font-size: 1.3rem;
-  color: var(--blue-bright);
+.funnel-svg {
+  width: 100%;
+  max-width: 480px;
+  height: auto;
   display: block;
+  margin: 0 auto;
 }
 
-.applications-stat-tile .stat-label {
+.funnel-bar-track {
+  fill: var(--panel-bg-alt);
+}
+
+.funnel-bar {
+  outline: none;
+}
+
+.funnel-bar rect:not(.funnel-bar-track) {
+  transition: opacity 0.1s ease;
+}
+
+.funnel-bar:hover rect:not(.funnel-bar-track),
+.funnel-bar:focus-visible rect:not(.funnel-bar-track) {
+  opacity: 0.8;
+}
+
+.funnel-bar.active rect:not(.funnel-bar-track) {
+  stroke: var(--border);
+  stroke-width: 2;
+}
+
+.funnel-bar-label {
+  font-family: inherit;
+  font-size: 11px;
+  fill: #ffffff;
+  paint-order: stroke;
+  stroke: rgba(10, 19, 48, 0.55);
+  stroke-width: 3px;
+  pointer-events: none;
+}
+
+.funnel-outcomes {
+  display: flex;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.funnel-outcome-badge {
+  font-family: inherit;
   font-size: 0.55rem;
-  color: var(--text-muted);
-  display: block;
-  margin-top: 0.3rem;
+  padding: 0.4rem 0.7rem;
+  border: 2px solid var(--error-border);
+  background: var(--error-bg);
+  color: var(--error);
+  cursor: pointer;
+}
+
+.funnel-outcome-badge.active {
+  background: var(--error);
+  color: #ffffff;
 }
 
 #applications-table {

@@ -162,6 +162,38 @@ async function markApplied({ title, company, url, resumeId }) {
   return response.json();
 }
 
+// Same normalization the website (frontend/app.js) and the backend
+// (applications_lambda/handler.py normalize_url) use, so a URL captured
+// here matches records created from either surface.
+function normalizeUrl(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    return (u.host.toLowerCase() + u.pathname).replace(/\/$/, '');
+  } catch {
+    return rawUrl.trim().toLowerCase();
+  }
+}
+
+async function checkApplied(url) {
+  const { id_token } = await chrome.storage.local.get('id_token');
+  if (!id_token) {
+    throw new Error('not logged in');
+  }
+  const response = await fetch(`${API_BASE}/applications`, {
+    headers: { Authorization: `Bearer ${id_token}` },
+  });
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      await chrome.storage.local.remove(['id_token', 'access_token']);
+      throw new Error('your session expired — please log in again');
+    }
+    throw new Error('could not check applied status');
+  }
+  const { applications } = await response.json();
+  const normalized = normalizeUrl(url);
+  return applications.find((a) => a.url_normalized === normalized) || null;
+}
+
 // Runs inside the page (via executeScript) to decide if this looks like a
 // job description/posting page, as opposed to an application form or an
 // unrelated page - self-contained, no closures over background.js state,
@@ -235,7 +267,7 @@ async function scrapeJobDescription(tabId) {
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  chrome.storage.local.remove([`optimizeResult_${tabId}`, `optimizeSettings_${tabId}`, `appliedState_${tabId}`]);
+  chrome.storage.local.remove([`optimizeResult_${tabId}`, `optimizeSettings_${tabId}`]);
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -271,6 +303,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === 'MARK_APPLIED') {
     markApplied(message.payload)
+      .then((application) => sendResponse({ ok: true, application }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (message.type === 'CHECK_APPLIED') {
+    checkApplied(message.payload.url)
       .then((application) => sendResponse({ ok: true, application }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;

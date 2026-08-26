@@ -212,7 +212,6 @@ markAppliedBtn.addEventListener('click', async () => {
 
     markAppliedBtn.textContent = '✓ Marked applied';
     markAppliedBtn.classList.add('success');
-    await saveStoredAppliedState(tab);
     return;
   } catch (err) {
     statusEl.textContent = err.message || 'Could not mark as applied.';
@@ -224,22 +223,13 @@ markAppliedBtn.addEventListener('click', async () => {
   }
 });
 
-function appliedStorageKey(tabId) {
-  return `appliedState_${tabId}`;
-}
-
-async function saveStoredAppliedState(tab) {
+// Asks the server (not local per-tab storage) whether this URL is already
+// tracked as applied, so a fresh tab on a posting you already marked from
+// elsewhere still shows the right state instead of defaulting to unmarked.
+async function checkAppliedState(tab) {
   if (!tab) return;
-  const key = appliedStorageKey(tab.id);
-  await chrome.storage.local.set({ [key]: { pageUrl: tab.url, applied: true } });
-}
-
-async function restoreStoredAppliedState(tab) {
-  if (!tab) return;
-  const key = appliedStorageKey(tab.id);
-  const stored = await chrome.storage.local.get(key);
-  const entry = stored[key];
-  if (entry && entry.pageUrl === tab.url && entry.applied) {
+  const response = await sendMessage({ type: 'CHECK_APPLIED', payload: { url: tab.url } });
+  if (response.ok && response.application) {
     markAppliedBtn.textContent = '✓ Marked applied';
     markAppliedBtn.classList.add('success');
     markAppliedBtn.disabled = true;
@@ -309,7 +299,7 @@ async function init() {
   const tab = await getActiveTab();
   await restoreStoredSettings(tab);
   await restoreStoredResult(tab);
-  await restoreStoredAppliedState(tab);
+  await checkAppliedState(tab);
 
   const resumesResponse = await sendMessage({ type: 'GET_DOCX_RESUMES' });
   if (!resumesResponse.ok) {

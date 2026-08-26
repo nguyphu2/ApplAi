@@ -13,7 +13,7 @@ const profileLoggedOut = document.getElementById('profile-logged-out');
 const profileLoggedIn = document.getElementById('profile-logged-in');
 const applicationsLoggedOut = document.getElementById('applications-logged-out');
 const applicationsLoggedIn = document.getElementById('applications-logged-in');
-const applicationsStatsEl = document.getElementById('applications-stats');
+const applicationsFunnelEl = document.getElementById('applications-funnel');
 const applicationsTableBody = document.getElementById('applications-table-body');
 const applicationsEmptyEl = document.getElementById('applications-empty');
 const APPLICATIONS_EMPTY_TEXT = applicationsEmptyEl.textContent;
@@ -457,23 +457,129 @@ matchForm.addEventListener('submit', async (event) => {
 
 // --- Applications tab ---
 
-function renderApplicationsStats() {
+// Stages shown as the funnel proper - Applied is every tracked application
+// regardless of current status, the rest are counted by current status
+// only (the data model has no status-history log, so these are snapshot
+// counts, not true cumulative pass-through counts - see design note).
+const FUNNEL_STAGES = ['Applied', '1st Stage', '2nd Stage', '3rd Stage', 'Offer'];
+const FUNNEL_OUTCOME_STATUSES = ['Rejected', 'Offer Declined'];
+const FUNNEL_SHADES = ['#0a1f44', '#1e50c4', '#3b82f6', '#60a5fa', '#93c5fd'];
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+let applicationsStatusFilter = null;
+
+function applicationsStatusCounts() {
   const counts = { Applied: applications.length };
   for (const status of STATUS_LIST.slice(1)) {
     counts[status] = applications.filter((a) => a.status === status).length;
   }
-  applicationsStatsEl.innerHTML = STATUS_LIST.map((status) => `
-    <div class="applications-stat-tile">
-      <span class="stat-value">${counts[status]}</span>
-      <span class="stat-label">${status}</span>
-    </div>
-  `).join('');
+  return counts;
+}
+
+function toggleApplicationsStatusFilter(status) {
+  applicationsStatusFilter = applicationsStatusFilter === status ? null : status;
+  renderApplicationsFunnel();
+  renderApplicationsTable();
+}
+
+function renderApplicationsFunnel() {
+  const counts = applicationsStatusCounts();
+  const maxCount = Math.max(1, ...FUNNEL_STAGES.map((s) => counts[s]));
+  const svgWidth = 420;
+  const barMaxWidth = 380;
+  const barHeight = 34;
+  const gap = 6;
+  const svgHeight = FUNNEL_STAGES.length * (barHeight + gap) - gap;
+
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Application pipeline funnel by status');
+  svg.classList.add('funnel-svg');
+
+  FUNNEL_STAGES.forEach((stage, i) => {
+    const count = counts[stage];
+    const width = count > 0 ? Math.max((count / maxCount) * barMaxWidth, 8) : 0;
+    const x = (svgWidth - width) / 2;
+    const y = i * (barHeight + gap);
+
+    const g = document.createElementNS(SVG_NS, 'g');
+    g.classList.add('funnel-bar');
+    if (applicationsStatusFilter === stage) g.classList.add('active');
+    g.setAttribute('tabindex', '0');
+    g.setAttribute('role', 'button');
+    g.setAttribute('aria-pressed', String(applicationsStatusFilter === stage));
+
+    const track = document.createElementNS(SVG_NS, 'rect');
+    track.setAttribute('x', (svgWidth - barMaxWidth) / 2);
+    track.setAttribute('y', y);
+    track.setAttribute('width', barMaxWidth);
+    track.setAttribute('height', barHeight);
+    track.classList.add('funnel-bar-track');
+    g.appendChild(track);
+
+    const rect = document.createElementNS(SVG_NS, 'rect');
+    rect.setAttribute('x', x);
+    rect.setAttribute('y', y);
+    rect.setAttribute('width', width);
+    rect.setAttribute('height', barHeight);
+    rect.setAttribute('fill', FUNNEL_SHADES[i]);
+    g.appendChild(rect);
+
+    const title = document.createElementNS(SVG_NS, 'title');
+    title.textContent = `${stage}: ${count}`;
+    g.appendChild(title);
+
+    const label = document.createElementNS(SVG_NS, 'text');
+    label.setAttribute('x', svgWidth / 2);
+    label.setAttribute('y', y + barHeight / 2 + 4);
+    label.setAttribute('text-anchor', 'middle');
+    label.classList.add('funnel-bar-label');
+    label.textContent = `${stage} (${count})`;
+    g.appendChild(label);
+
+    function activate() {
+      toggleApplicationsStatusFilter(stage);
+    }
+    g.addEventListener('click', activate);
+    g.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        activate();
+      }
+    });
+
+    svg.appendChild(g);
+  });
+
+  applicationsFunnelEl.innerHTML = '';
+  applicationsFunnelEl.appendChild(svg);
+
+  const outcomes = document.createElement('div');
+  outcomes.className = 'funnel-outcomes';
+  FUNNEL_OUTCOME_STATUSES.forEach((status) => {
+    const badge = document.createElement('button');
+    badge.type = 'button';
+    badge.className = `funnel-outcome-badge${applicationsStatusFilter === status ? ' active' : ''}`;
+    badge.textContent = `${status}: ${counts[status]}`;
+    badge.addEventListener('click', () => toggleApplicationsStatusFilter(status));
+    outcomes.appendChild(badge);
+  });
+  applicationsFunnelEl.appendChild(outcomes);
 }
 
 function renderApplicationsTable() {
-  if (applications.length === 0) applicationsEmptyEl.textContent = APPLICATIONS_EMPTY_TEXT;
-  applicationsEmptyEl.classList.toggle('hidden', applications.length > 0);
-  const sorted = [...applications].sort((a, b) => (b.applied_at || '').localeCompare(a.applied_at || ''));
+  const filtered = applicationsStatusFilter
+    ? applications.filter((a) => a.status === applicationsStatusFilter)
+    : applications;
+
+  if (applications.length === 0) {
+    applicationsEmptyEl.textContent = APPLICATIONS_EMPTY_TEXT;
+  } else if (filtered.length === 0) {
+    applicationsEmptyEl.textContent = `No applications with status "${applicationsStatusFilter}".`;
+  }
+  applicationsEmptyEl.classList.toggle('hidden', filtered.length > 0);
+  const sorted = [...filtered].sort((a, b) => (b.applied_at || '').localeCompare(a.applied_at || ''));
 
   applicationsTableBody.innerHTML = '';
 
@@ -529,7 +635,8 @@ function renderApplicationsTable() {
       try {
         const updated = await updateApplicationStatus(applicationId, event.target.value);
         applications = applications.map((app) => (app.application_id === applicationId ? updated : app));
-        renderApplicationsStats();
+        renderApplicationsFunnel();
+        renderApplicationsTable();
       } catch (err) {
         console.error('failed to update application status:', err);
         event.target.value = previousStatus;
@@ -540,7 +647,7 @@ function renderApplicationsTable() {
       try {
         await deleteApplication(applicationId);
         applications = applications.filter((app) => app.application_id !== applicationId);
-        renderApplicationsStats();
+        renderApplicationsFunnel();
         renderApplicationsTable();
         if (lastMatches.length > 0) renderMatches();
       } catch (err) {
@@ -554,7 +661,7 @@ function renderApplicationsTable() {
 
 async function loadApplications() {
   applications = (await listApplications()).applications;
-  renderApplicationsStats();
+  renderApplicationsFunnel();
   renderApplicationsTable();
 }
 
@@ -737,12 +844,21 @@ function showTab(name) {
   tabSearch.classList.toggle('active', name === 'search');
   tabProfile.classList.toggle('active', name === 'profile');
   tabApplications.classList.toggle('active', name === 'applications');
+  if (window.location.hash !== `#${name}`) {
+    // replaceState (not location.hash =) so this doesn't fire our own
+    // hashchange listener and double-activate the tab - hashchange should
+    // only fire for real back/forward/bookmark navigation.
+    history.replaceState(null, '', `#${name}`);
+  }
 }
 
-tabSearch.addEventListener('click', () => showTab('search'));
 let profileSettingsLoaded = false;
 
-tabApplications.addEventListener('click', async () => {
+async function activateSearchTab() {
+  showTab('search');
+}
+
+async function activateApplicationsTab() {
   showTab('applications');
   applicationsLoggedOut.classList.toggle('hidden', isLoggedIn());
   applicationsLoggedIn.classList.toggle('hidden', !isLoggedIn());
@@ -758,8 +874,9 @@ tabApplications.addEventListener('click', async () => {
     applicationsEmptyEl.textContent = "Couldn't load your applications — try again.";
     applicationsEmptyEl.classList.remove('hidden');
   }
-});
-tabProfile.addEventListener('click', async () => {
+}
+
+async function activateProfileTab() {
   showTab('profile');
   if (!isLoggedIn()) {
     profileLoggedOut.classList.remove('hidden');
@@ -781,7 +898,11 @@ tabProfile.addEventListener('click', async () => {
     console.error('failed to load profile:', err);
     showComicBubble(tabProfile, "Couldn't load your profile — try again in a moment.");
   }
-});
+}
+
+tabSearch.addEventListener('click', () => activateSearchTab());
+tabApplications.addEventListener('click', () => activateApplicationsTab());
+tabProfile.addEventListener('click', () => activateProfileTab());
 
 loginBtn.addEventListener('click', () => login());
 logoutBtn.addEventListener('click', () => logout());
@@ -791,7 +912,17 @@ function updateAuthUI() {
   logoutBtn.classList.toggle('hidden', !isLoggedIn());
 }
 
+function activateTabFromHash() {
+  const name = window.location.hash.replace('#', '');
+  if (name === 'profile') return activateProfileTab();
+  if (name === 'applications') return activateApplicationsTab();
+  return activateSearchTab();
+}
+
+window.addEventListener('hashchange', activateTabFromHash);
+
 (async function init() {
   await handleCallback();
   updateAuthUI();
+  await activateTabFromHash();
 })();

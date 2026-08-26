@@ -25,6 +25,9 @@ async function generateCodeChallenge(verifier) {
 export async function login() {
   const verifier = generateCodeVerifier();
   const challenge = await generateCodeChallenge(verifier);
+  // PKCE verifier only needs to survive the redirect round-trip within this
+  // tab, so sessionStorage is correct here even though the tokens below use
+  // localStorage to survive tab/browser closes.
   sessionStorage.setItem('pkce_verifier', verifier);
 
   const params = new URLSearchParams({
@@ -39,8 +42,8 @@ export async function login() {
 }
 
 export function logout() {
-  sessionStorage.removeItem('id_token');
-  sessionStorage.removeItem('access_token');
+  localStorage.removeItem('id_token');
+  localStorage.removeItem('access_token');
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
     logout_uri: REDIRECT_URI,
@@ -77,13 +80,13 @@ export async function handleCallback() {
   }
 
   const tokens = await response.json();
-  sessionStorage.setItem('id_token', tokens.id_token);
-  sessionStorage.setItem('access_token', tokens.access_token);
+  localStorage.setItem('id_token', tokens.id_token);
+  localStorage.setItem('access_token', tokens.access_token);
   return true;
 }
 
 export function getIdToken() {
-  return sessionStorage.getItem('id_token');
+  return localStorage.getItem('id_token');
 }
 
 export function isLoggedIn() {
