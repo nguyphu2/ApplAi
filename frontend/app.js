@@ -261,10 +261,6 @@ function applicationsByUrl() {
   return map;
 }
 
-function findApplicationByUrl(normalizedUrl) {
-  return applications.find((a) => a.url_normalized === normalizedUrl);
-}
-
 function renderMatches() {
   const allMatches = sortMatches(filterByRelevance(lastMatches), sortBySelect.value);
 
@@ -292,7 +288,9 @@ function renderMatches() {
       ${job.ingested_at ? `<div class="posted-date">${new Date(job.ingested_at).toLocaleDateString()}</div>` : ''}
       <div class="analyze-row">
         <button class="secondary analyze-btn">${isLoggedIn() ? 'Job match analysis' : '🔒 Job match analysis'}</button>
+        ${job.listing_url ? `
         <button class="job-applied-toggle${appliedByUrl.has(normalizeUrl(job.listing_url)) ? ' applied' : ''}">${isLoggedIn() ? (appliedByUrl.has(normalizeUrl(job.listing_url)) ? '✓ Applied' : 'Mark applied') : '🔒 Mark applied'}</button>
+        ` : '<button class="job-applied-toggle" disabled title="No listing URL available">Mark applied</button>'}
         <div class="analysis-result"></div>
       </div>
     </div>
@@ -328,6 +326,7 @@ function renderMatches() {
 
       const settings = await getSettings();
       profileSettings = settings;
+      profileSettingsLoaded = true;
       if (settings.active_resume_ids.length === 0) {
         showComicBubble(btn, '🔒 Upload a resume first.');
         return;
@@ -364,9 +363,12 @@ function renderMatches() {
         showComicBubble(btn, '🔒 Log in or sign up first.');
         return;
       }
+      if (!listingUrl) {
+        return;
+      }
 
       const normalized = normalizeUrl(listingUrl);
-      const existing = findApplicationByUrl(normalized);
+      const existing = applicationsByUrl().get(normalized);
 
       btn.disabled = true;
       try {
@@ -390,7 +392,7 @@ function renderMatches() {
           btn.classList.add('applied');
         }
       } catch (err) {
-        showComicBubble(btn, "Couldn't update — try again.");
+        showComicBubble(btn, err.message || "Couldn't update — try again.");
       } finally {
         btn.disabled = false;
       }
@@ -410,6 +412,7 @@ async function buildProfileText() {
   }
   const settings = await getSettings();
   profileSettings = settings;
+  profileSettingsLoaded = true;
   const activeResumeText = settings.resumes
     .filter((r) => settings.active_resume_ids.includes(r.id))
     .map((r) => r.text);
@@ -438,7 +441,7 @@ matchForm.addEventListener('submit', async (event) => {
     const skillsText = await buildProfileText();
     const result = await search({ skills_text: skillsText, filters });
     lastMatches = result.matches;
-    if (isLoggedIn() && applications.length === 0) {
+    if (isLoggedIn()) {
       try {
         await loadApplications();
       } catch (err) {
@@ -470,46 +473,78 @@ function renderApplicationsTable() {
   applicationsEmptyEl.classList.toggle('hidden', applications.length > 0);
   const sorted = [...applications].sort((a, b) => (b.applied_at || '').localeCompare(a.applied_at || ''));
 
-  applicationsTableBody.innerHTML = sorted.map((a) => {
+  applicationsTableBody.innerHTML = '';
+
+  sorted.forEach((a) => {
     const resume = profileSettings.resumes.find((r) => r.id === a.resume_id);
-    return `
-      <tr data-application-id="${a.application_id}">
-        <td>${a.company || '—'}</td>
-        <td><a href="${a.url}" target="_blank" rel="noopener">${a.title}</a></td>
-        <td>
-          <select class="application-status-select">
-            ${STATUS_LIST.map((s) => `<option value="${s}" ${s === a.status ? 'selected' : ''}>${s}</option>`).join('')}
-          </select>
-        </td>
-        <td>${resume ? resume.filename : '—'}</td>
-        <td>${a.applied_at ? new Date(a.applied_at).toLocaleDateString() : '—'}</td>
-        <td><button type="button" class="secondary delete-btn application-remove-btn">Remove</button></td>
-      </tr>
-    `;
-  }).join('');
 
-  applicationsTableBody.querySelectorAll('tr').forEach((row) => {
-    const applicationId = row.dataset.applicationId;
+    const row = document.createElement('tr');
+    row.dataset.applicationId = a.application_id;
 
-    row.querySelector('.application-status-select').addEventListener('change', async (event) => {
+    const companyCell = document.createElement('td');
+    companyCell.textContent = a.company || '—';
+
+    const titleCell = document.createElement('td');
+    const link = document.createElement('a');
+    link.href = a.url;
+    link.textContent = a.title;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    titleCell.appendChild(link);
+
+    const statusCell = document.createElement('td');
+    const select = document.createElement('select');
+    select.className = 'application-status-select';
+    STATUS_LIST.forEach((s) => {
+      const option = document.createElement('option');
+      option.value = s;
+      option.textContent = s;
+      if (s === a.status) option.selected = true;
+      select.appendChild(option);
+    });
+    statusCell.appendChild(select);
+
+    const resumeCell = document.createElement('td');
+    resumeCell.textContent = resume ? resume.filename : '—';
+
+    const dateCell = document.createElement('td');
+    dateCell.textContent = a.applied_at ? new Date(a.applied_at).toLocaleDateString() : '—';
+
+    const removeCell = document.createElement('td');
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'secondary delete-btn application-remove-btn';
+    removeBtn.textContent = 'Remove';
+    removeCell.appendChild(removeBtn);
+
+    row.append(companyCell, titleCell, statusCell, resumeCell, dateCell, removeCell);
+    applicationsTableBody.appendChild(row);
+
+    const applicationId = a.application_id;
+    const previousStatus = a.status;
+
+    select.addEventListener('change', async (event) => {
       try {
         const updated = await updateApplicationStatus(applicationId, event.target.value);
-        applications = applications.map((a) => (a.application_id === applicationId ? updated : a));
+        applications = applications.map((app) => (app.application_id === applicationId ? updated : app));
         renderApplicationsStats();
       } catch (err) {
         console.error('failed to update application status:', err);
+        event.target.value = previousStatus;
       }
     });
 
-    row.querySelector('.application-remove-btn').addEventListener('click', async () => {
+    removeBtn.addEventListener('click', async () => {
       try {
         await deleteApplication(applicationId);
-        applications = applications.filter((a) => a.application_id !== applicationId);
+        applications = applications.filter((app) => app.application_id !== applicationId);
         renderApplicationsStats();
         renderApplicationsTable();
         if (lastMatches.length > 0) renderMatches();
       } catch (err) {
         console.error('failed to delete application:', err);
+        row.classList.add('row-error');
+        removeBtn.textContent = "Couldn't remove — try again";
       }
     });
   });
@@ -703,15 +738,23 @@ function showTab(name) {
 }
 
 tabSearch.addEventListener('click', () => showTab('search'));
+let profileSettingsLoaded = false;
+
 tabApplications.addEventListener('click', async () => {
   showTab('applications');
   applicationsLoggedOut.classList.toggle('hidden', isLoggedIn());
   applicationsLoggedIn.classList.toggle('hidden', !isLoggedIn());
   if (!isLoggedIn()) return;
   try {
+    if (!profileSettingsLoaded) {
+      profileSettings = await getSettings();
+      profileSettingsLoaded = true;
+    }
     await loadApplications();
   } catch (err) {
     console.error('failed to load applications:', err);
+    applicationsEmptyEl.textContent = "Couldn't load your applications — try again.";
+    applicationsEmptyEl.classList.remove('hidden');
   }
 });
 tabProfile.addEventListener('click', async () => {
@@ -725,6 +768,7 @@ tabProfile.addEventListener('click', async () => {
   profileLoggedIn.classList.remove('hidden');
   try {
     profileSettings = await getSettings();
+    profileSettingsLoaded = true;
     profileSkillsText.value = profileSettings.skills_text;
     setSkillsMode(profileSettings.skills_text ? 'view' : 'edit');
     renderResumeList();

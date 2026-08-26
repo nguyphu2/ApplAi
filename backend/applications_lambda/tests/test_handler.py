@@ -126,6 +126,36 @@ def test_delete_returns_404_for_missing_application(handler_module):
     assert response['statusCode'] == 404
 
 
+def test_normalize_url_matches_across_port_and_percent_encoding(handler_module):
+    a = handler_module.normalize_url('https://example.com:443/jobs/a b')
+    b = handler_module.normalize_url('https://example.com/jobs/a%20b')
+    assert a == b
+
+
+def test_normalize_url_strips_userinfo(handler_module):
+    normalized = handler_module.normalize_url('https://user:pw@example.com/job')
+    assert 'user' not in normalized
+    assert 'pw' not in normalized
+    assert normalized == 'example.com/job'
+
+
+def test_post_is_idempotent_for_same_normalized_url(handler_module):
+    first = handler_module.handler(make_event('POST', body={
+        'title': 'Role', 'url': 'https://example.com/job/',
+    }), None)
+    second = handler_module.handler(make_event('POST', body={
+        'title': 'Role Again', 'url': 'https://EXAMPLE.com/job',
+    }), None)
+
+    first_id = json.loads(first['body'])['application_id']
+    second_id = json.loads(second['body'])['application_id']
+    assert first_id == second_id
+
+    get_response = handler_module.handler(make_event('GET'), None)
+    applications = json.loads(get_response['body'])['applications']
+    assert len(applications) == 1
+
+
 def test_post_stores_job_id_and_resume_id_when_provided(handler_module):
     response = handler_module.handler(make_event('POST', body={
         'title': 'Role', 'url': 'https://example.com/job',

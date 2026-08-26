@@ -15,7 +15,15 @@ const statusEl = document.getElementById('status');
 const progressEl = document.getElementById('optimize-progress');
 
 function sendMessage(message) {
-  return new Promise((resolve) => chrome.runtime.sendMessage(message, resolve));
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(message, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve({ ok: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+      resolve(response);
+    });
+  });
 }
 
 async function getActiveTab() {
@@ -181,31 +189,39 @@ markAppliedBtn.addEventListener('click', async () => {
   markAppliedBtn.disabled = true;
   markAppliedBtn.textContent = 'Marking...';
 
-  const key = resultStorageKey(tab.id);
-  const stored = await chrome.storage.local.get(key);
-  const entry = stored[key];
-  const hasResultForThisPage = entry && entry.pageUrl === tab.url;
+  try {
+    const key = resultStorageKey(tab.id);
+    const stored = await chrome.storage.local.get(key);
+    const entry = stored[key];
+    const hasResultForThisPage = entry && entry.pageUrl === tab.url;
 
-  const response = await sendMessage({
-    type: 'MARK_APPLIED',
-    payload: {
-      title: tab.title || 'Untitled posting',
-      company: '',
-      url: tab.url,
-      resumeId: hasResultForThisPage ? (resumeSelect.value || null) : null,
-    },
-  });
+    const response = await sendMessage({
+      type: 'MARK_APPLIED',
+      payload: {
+        title: tab.title || 'Untitled posting',
+        company: '',
+        url: tab.url,
+        resumeId: hasResultForThisPage ? (resumeSelect.value || null) : null,
+      },
+    });
 
-  if (!response.ok) {
-    statusEl.textContent = response.error || 'Could not mark as applied.';
-    markAppliedBtn.disabled = false;
-    markAppliedBtn.textContent = 'Mark as applied';
+    if (!response || !response.ok) {
+      statusEl.textContent = (response && response.error) || 'Could not mark as applied.';
+      return;
+    }
+
+    markAppliedBtn.textContent = '✓ Marked applied';
+    markAppliedBtn.classList.add('success');
+    await saveStoredAppliedState(tab);
     return;
+  } catch (err) {
+    statusEl.textContent = err.message || 'Could not mark as applied.';
+  } finally {
+    if (!markAppliedBtn.classList.contains('success')) {
+      markAppliedBtn.disabled = false;
+      markAppliedBtn.textContent = 'Mark as applied';
+    }
   }
-
-  markAppliedBtn.textContent = '✓ Marked applied';
-  markAppliedBtn.classList.add('success');
-  await saveStoredAppliedState(tab);
 });
 
 function appliedStorageKey(tabId) {

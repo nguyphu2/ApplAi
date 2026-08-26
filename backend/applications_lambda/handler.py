@@ -8,7 +8,7 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import quote, unquote, urlparse
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -34,8 +34,9 @@ def get_user_id(event):
 def normalize_url(raw_url):
     try:
         parsed = urlparse(raw_url)
-        path = parsed.path.rstrip('/')
-        return f'{parsed.netloc.lower()}{path}'
+        host = (parsed.hostname or '').lower()
+        path = quote(unquote(parsed.path), safe='/%').rstrip('/')
+        return f'{host}{path}'
     except Exception:
         return raw_url.strip().lower()
 
@@ -70,6 +71,16 @@ def handler(event, context):
         if status not in VALID_STATUSES:
             return {'statusCode': 400, 'body': json.dumps({'error': f'status must be one of {sorted(VALID_STATUSES)}'})}
 
+        url_normalized = normalize_url(url)
+        try:
+            existing_items = list_applications(user_id)
+        except ClientError as e:
+            print(f'DynamoDB query failed: {e}')
+            return {'statusCode': 502, 'body': json.dumps({'error': 'applications service failed'})}
+        for existing in existing_items:
+            if existing.get('url_normalized') == url_normalized:
+                return {'statusCode': 200, 'body': json.dumps(existing)}
+
         now = datetime.now(timezone.utc).isoformat()
         item = {
             'user_id': user_id,
@@ -77,7 +88,7 @@ def handler(event, context):
             'title': title,
             'company': body.get('company') or '',
             'url': url,
-            'url_normalized': normalize_url(url),
+            'url_normalized': url_normalized,
             'job_id': body.get('job_id'),
             'resume_id': body.get('resume_id'),
             'status': status,
