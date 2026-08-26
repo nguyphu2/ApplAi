@@ -16,6 +16,7 @@ const applicationsLoggedIn = document.getElementById('applications-logged-in');
 const applicationsStatsEl = document.getElementById('applications-stats');
 const applicationsTableBody = document.getElementById('applications-table-body');
 const applicationsEmptyEl = document.getElementById('applications-empty');
+const APPLICATIONS_EMPTY_TEXT = applicationsEmptyEl.textContent;
 const profileSkillsText = document.getElementById('profile-skills-text');
 const profileStatus = document.getElementById('profile-status');
 const saveSkillsBtn = document.getElementById('save-skills-btn');
@@ -470,6 +471,7 @@ function renderApplicationsStats() {
 }
 
 function renderApplicationsTable() {
+  if (applications.length === 0) applicationsEmptyEl.textContent = APPLICATIONS_EMPTY_TEXT;
   applicationsEmptyEl.classList.toggle('hidden', applications.length > 0);
   const sorted = [...applications].sort((a, b) => (b.applied_at || '').localeCompare(a.applied_at || ''));
 

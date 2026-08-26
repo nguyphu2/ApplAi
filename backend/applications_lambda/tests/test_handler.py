@@ -156,6 +156,39 @@ def test_post_is_idempotent_for_same_normalized_url(handler_module):
     assert len(applications) == 1
 
 
+def test_normalize_url_leaves_plus_and_subdelims_unescaped(handler_module):
+    normalized = handler_module.normalize_url('https://example.com/software+engineer')
+    assert normalized == 'example.com/software+engineer'
+
+
+def test_normalize_url_preserves_existing_percent_encoded_slash(handler_module):
+    encoded = handler_module.normalize_url('https://example.com/a%2Fb')
+    literal = handler_module.normalize_url('https://example.com/a/b')
+    assert encoded == 'example.com/a%2Fb'
+    assert literal == 'example.com/a/b'
+    assert encoded != literal
+
+
+def test_normalize_url_keeps_non_default_port(handler_module):
+    normalized = handler_module.normalize_url('https://example.com:8080/x')
+    assert normalized == 'example.com:8080/x'
+
+
+def test_normalize_url_drops_default_https_port(handler_module):
+    normalized = handler_module.normalize_url('https://example.com:443/x')
+    assert normalized == 'example.com/x'
+
+
+def test_normalize_url_drops_default_http_port(handler_module):
+    normalized = handler_module.normalize_url('http://example.com:80/x')
+    assert normalized == 'example.com/x'
+
+
+def test_normalize_url_keeps_non_default_port_for_scheme(handler_module):
+    normalized = handler_module.normalize_url('http://example.com:443/x')
+    assert normalized == 'example.com:443/x'
+
+
 def test_post_stores_job_id_and_resume_id_when_provided(handler_module):
     response = handler_module.handler(make_event('POST', body={
         'title': 'Role', 'url': 'https://example.com/job',

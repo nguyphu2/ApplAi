@@ -8,7 +8,7 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import quote, urlparse
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -31,11 +31,20 @@ def get_user_id(event):
     return event['requestContext']['authorizer']['jwt']['claims']['sub']
 
 
+DEFAULT_PORTS = {'http': 80, 'https': 443}
+
+
 def normalize_url(raw_url):
     try:
         parsed = urlparse(raw_url)
-        host = (parsed.hostname or '').lower()
-        path = quote(unquote(parsed.path), safe='/%').rstrip('/')
+        hostname = (parsed.hostname or '').lower()
+        port = parsed.port
+        default_port = DEFAULT_PORTS.get(parsed.scheme)
+        host = hostname if port is None or port == default_port else f'{hostname}:{port}'
+        # Only escape what the WHATWG path percent-encode set escapes (matches
+        # JS's `new URL(...).pathname`): no unquote() pre-pass, so existing
+        # percent-encoding (e.g. %2F) is preserved rather than collapsed.
+        path = quote(parsed.path, safe="/%!$&'()*+,;=:@~-._").rstrip('/')
         return f'{host}{path}'
     except Exception:
         return raw_url.strip().lower()
