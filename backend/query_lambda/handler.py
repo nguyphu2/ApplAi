@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import boto3
 from boto3.dynamodb.conditions import Key
+from botocore.config import Config
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
@@ -22,14 +23,18 @@ BUCKET_NAME = os.getenv('BUCKET_NAME')
 BEDROCK_KB_ID = os.getenv('BEDROCK_KB_ID')
 UNINTERESTED_TABLE_NAME = os.getenv('UNINTERESTED_TABLE_NAME')
 
-s3_client = boto3.client('s3')
-agent_runtime = boto3.client('bedrock-agent-runtime')
-dynamodb = boto3.resource('dynamodb')
-uninterested_table = dynamodb.Table(UNINTERESTED_TABLE_NAME) if UNINTERESTED_TABLE_NAME else None
-
 MAX_RESULTS = 50  # frontend reveals these 10 at a time via "Load more"
 BROWSE_SCAN_LIMIT = 300  # cap how many candidates we'll fetch in browse mode
 BROWSE_FETCH_WORKERS = 20
+
+# Default boto3 connection pool (10) is smaller than BROWSE_FETCH_WORKERS,
+# so concurrent S3 fetches were constantly exhausting and recreating
+# connections ("Connection pool is full, discarding connection" in the
+# logs) - observed live after the concurrency fix below, costing real time.
+s3_client = boto3.client('s3', config=Config(max_pool_connections=BROWSE_FETCH_WORKERS * 2))
+agent_runtime = boto3.client('bedrock-agent-runtime')
+dynamodb = boto3.resource('dynamodb')
+uninterested_table = dynamodb.Table(UNINTERESTED_TABLE_NAME) if UNINTERESTED_TABLE_NAME else None
 SEMANTIC_SCAN_LIMIT = 100  # max allowed by Bedrock retrieve(); used when
                             # title/location need client-side post-filtering
 
