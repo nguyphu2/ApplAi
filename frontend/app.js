@@ -1,6 +1,7 @@
 import { login, logout, handleCallback, isLoggedIn } from './auth.js';
 import { search, analyze, getSettings, putSettings, autocompleteLocation, listApplications, createApplication, updateApplicationStatus, deleteApplication, markUninterested, listUninterested, unmarkUninterested } from './api.js';
 
+const appMainEl = document.getElementById('app-main');
 const loginBtn = document.getElementById('login-btn');
 const logoutBtn = document.getElementById('logout-btn');
 const tabSearch = document.getElementById('tab-search');
@@ -33,34 +34,20 @@ const profileStatus = document.getElementById('profile-status');
 const saveSkillsBtn = document.getElementById('save-skills-btn');
 const editSkillsBtn = document.getElementById('edit-skills-btn');
 const deleteSkillsBtn = document.getElementById('delete-skills-btn');
-const profileFullName = document.getElementById('profile-full-name');
 const profileFirstName = document.getElementById('profile-first-name');
 const profileLastName = document.getElementById('profile-last-name');
 const profileEmail = document.getElementById('profile-email');
 const profilePhone = document.getElementById('profile-phone');
-const profileWorkAuthorization = document.getElementById('profile-work-authorization');
 const profileAddress = document.getElementById('profile-address');
-const profileCity = document.getElementById('profile-city');
-const profileState = document.getElementById('profile-state');
-const profileZipCode = document.getElementById('profile-zip-code');
-const profileLinkedinUrl = document.getElementById('profile-linkedin-url');
-const profilePortfolioUrl = document.getElementById('profile-portfolio-url');
 const saveProfileInfoBtn = document.getElementById('save-profile-info-btn');
 const editProfileInfoBtn = document.getElementById('edit-profile-info-btn');
 
 const PROFILE_INFO_FIELDS = [
-  ['full_name', profileFullName],
   ['first_name', profileFirstName],
   ['last_name', profileLastName],
   ['email', profileEmail],
   ['phone', profilePhone],
-  ['work_authorization', profileWorkAuthorization],
   ['address', profileAddress],
-  ['city', profileCity],
-  ['state', profileState],
-  ['zip_code', profileZipCode],
-  ['linkedin_url', profileLinkedinUrl],
-  ['portfolio_url', profilePortfolioUrl],
 ];
 
 const resumeNoneCheckbox = document.getElementById('resume-none');
@@ -285,7 +272,7 @@ function renderMatches() {
   const appliedByUrl = applicationsByUrl();
 
   resultsEl.innerHTML = matches.map((job) => `
-    <div class="job-card" data-job-id="${job.job_id}" data-listing-url="${job.listing_url}">
+    <div class="job-card${job.listing_url && appliedByUrl.has(normalizeUrl(job.listing_url)) ? ' applied' : ''}" data-job-id="${job.job_id}" data-listing-url="${job.listing_url}">
       ${job.match_score !== null && job.match_score !== undefined ? `
         <div class="match-bar-row">
           <div class="match-bar-track"><div class="match-bar-fill" style="width: ${job.match_score}%; background: ${matchBarColor(job.match_score)}"></div></div>
@@ -300,10 +287,12 @@ function renderMatches() {
       ${job.ingested_at ? `<div class="posted-date">${new Date(job.ingested_at).toLocaleDateString()}</div>` : ''}
       <div class="analyze-row">
         <button class="secondary analyze-btn">${isLoggedIn() ? 'Job match analysis' : '🔒 Job match analysis'}</button>
-        ${job.listing_url ? `
-        <button class="job-applied-toggle${appliedByUrl.has(normalizeUrl(job.listing_url)) ? ' applied' : ''}">${isLoggedIn() ? (appliedByUrl.has(normalizeUrl(job.listing_url)) ? '✓ Applied' : 'Mark applied') : '🔒 Mark applied'}</button>
-        ` : '<button class="job-applied-toggle" disabled title="No listing URL available">Mark applied</button>'}
-        <button class="secondary uninterested-btn">${isLoggedIn() ? 'Uninterested' : '🔒 Uninterested'}</button>
+        <div class="applied-uninterested-row">
+          ${job.listing_url ? `
+          <button class="job-applied-toggle${appliedByUrl.has(normalizeUrl(job.listing_url)) ? ' applied' : ''}">${isLoggedIn() ? (appliedByUrl.has(normalizeUrl(job.listing_url)) ? '✓ Applied' : 'Mark applied') : '🔒 Mark applied'}</button>
+          ` : '<button class="job-applied-toggle" disabled title="No listing URL available">Mark applied</button>'}
+          <button class="secondary uninterested-btn">${isLoggedIn() ? 'Uninterested' : '🔒 Uninterested'}</button>
+        </div>
         <div class="analysis-result"></div>
       </div>
     </div>
@@ -390,6 +379,7 @@ function renderMatches() {
           applications = applications.filter((a) => a.application_id !== existing.application_id);
           btn.textContent = 'Mark applied';
           btn.classList.remove('applied');
+          card.classList.remove('applied');
         } else {
           const activeResumeIds = profileSettings.active_resume_ids || [];
           const resumeId = activeResumeIds.length === 1 ? activeResumeIds[0] : null;
@@ -403,6 +393,7 @@ function renderMatches() {
           applications = [...applications, created];
           btn.textContent = '✓ Applied';
           btn.classList.add('applied');
+          card.classList.add('applied');
         }
       } catch (err) {
         showComicBubble(btn, err.message || "Couldn't update — try again.");
@@ -1064,7 +1055,7 @@ saveProfileInfoBtn.addEventListener('click', async () => {
 
 editProfileInfoBtn.addEventListener('click', () => {
   setProfileInfoMode('edit');
-  profileFullName.focus();
+  profileFirstName.focus();
 });
 
 function setResumeUploadButtonsVisible(visible) {
@@ -1111,6 +1102,7 @@ function showTab(name) {
   tabSearch.classList.toggle('active', name === 'search');
   tabProfile.classList.toggle('active', name === 'profile');
   tabApplications.classList.toggle('active', name === 'applications');
+  appMainEl.classList.toggle('wide', name === 'applications');
   if (window.location.hash !== `#${name}`) {
     // replaceState (not location.hash =) so this doesn't fire our own
     // hashchange listener and double-activate the tab - hashchange should

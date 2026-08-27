@@ -142,6 +142,10 @@ main {
   padding: 2.5rem 1.5rem 4rem;
 }
 
+main.wide {
+  max-width: 980px;
+}
+
 .sidebar-nav button {
   font-family: "Press Start 2P", monospace;
   font-size: 0.6rem;
@@ -384,6 +388,10 @@ form button[type="submit"] {
 
 .job-card, .job-card .meta, .job-card a, .job-card .analysis {
   font-family: "Press Start 2P", monospace;
+}
+
+.job-card.applied {
+  border-color: var(--success);
 }
 
 .match-bar-row {
@@ -975,6 +983,12 @@ input[type="file"]::-webkit-file-upload-button {
   border-bottom: 2px solid var(--panel-bg-alt);
 }
 
+.applied-uninterested-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
 .job-applied-toggle {
   cursor: pointer;
   border: 2px solid var(--border);
@@ -983,7 +997,8 @@ input[type="file"]::-webkit-file-upload-button {
   padding: 0.4rem 0.6rem;
   font-size: 0.55rem;
   display: block;
-  margin-top: 0.5rem;
+  flex: 1;
+  margin-top: 0;
 }
 
 .job-applied-toggle.applied {
@@ -1000,5 +1015,6 @@ input[type="file"]::-webkit-file-upload-button {
   padding: 0.4rem 0.6rem;
   font-size: 0.55rem;
   display: block;
-  margin-top: 0.5rem;
+  flex: 1;
+  margin-top: 0;
 }
