@@ -278,8 +278,21 @@ async function checkApplicationConfirmation(tab) {
 
   const key = `lastJobInfo_${tab.id}`;
   const stored = await chrome.storage.local.get(key);
-  const jobInfo = stored[key];
-  if (!jobInfo || !jobInfo.title) return;
+  let jobInfo = stored[key];
+
+  if (!jobInfo || !jobInfo.title) {
+    // Nothing was remembered for this tab (popup was never opened on the
+    // original posting, or the apply flow moved to a different tab) - fall
+    // back to whatever background.js could pull straight out of the
+    // confirmation sentence itself ("Your application for X at Y..."),
+    // using this page's own URL since the original posting URL is unknown.
+    if (response.extractedTitle) {
+      jobInfo = { title: response.extractedTitle, company: response.extractedCompany || '', url: tab.url };
+      await chrome.storage.local.set({ [key]: jobInfo });
+    } else {
+      return;
+    }
+  }
 
   confirmationJobInfoEl.textContent = jobInfo.company ? ` to ${jobInfo.title} at ${jobInfo.company}` : ` to ${jobInfo.title}`;
   confirmationPromptEl.classList.remove('hidden');

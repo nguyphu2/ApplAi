@@ -268,7 +268,12 @@ async function checkJobDescriptionPage() {
 // application-confirmation page ("Thank you for applying" etc), so the
 // popup can offer to mark the ORIGINAL job applied even though this page
 // itself isn't the posting - self-contained, no closures, same reason as
-// detectJobDescriptionPage above.
+// detectJobDescriptionPage above. Also best-effort extracts title/company
+// straight from the confirmation sentence itself ("Your application for
+// {title} at {company} has been submitted") - many ATS vendors phrase it
+// this way, and it's the only source available when the popup was never
+// opened on the original posting page (so nothing was remembered for
+// this tab) or the apply flow moved to a different tab along the way.
 function detectApplicationConfirmationPage() {
   const CONFIRMATION_TERMS = [
     'thank you for applying', 'thank you for your application', 'thanks for applying',
@@ -276,21 +281,38 @@ function detectApplicationConfirmationPage() {
     "we've received your application", 'we have received your application',
     'your application has been submitted', 'successfully applied',
   ];
-  const bodyText = document.body ? document.body.textContent.toLowerCase() : '';
-  return CONFIRMATION_TERMS.some((term) => bodyText.includes(term));
+  const rawText = document.body ? document.body.textContent.replace(/\s+/g, ' ').trim() : '';
+  const bodyText = rawText.toLowerCase();
+  const isConfirmation = CONFIRMATION_TERMS.some((term) => bodyText.includes(term));
+  if (!isConfirmation) {
+    return { isConfirmation: false, title: '', company: '' };
+  }
+
+  const patterns = [
+    /your application for (.+?) at (.+?) has been submitted/i,
+    /application for (.+?) at (.+?) (?:has been submitted|was submitted|is complete)/i,
+    /applied (?:to|for) (.+?) at (.+?)[.!]/i,
+  ];
+  for (const pattern of patterns) {
+    const match = rawText.match(pattern);
+    if (match) {
+      return { isConfirmation: true, title: match[1].trim(), company: match[2].trim() };
+    }
+  }
+  return { isConfirmation: true, title: '', company: '' };
 }
 
 async function checkApplicationConfirmationPage() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) return false;
+  if (!tab) return { isConfirmation: false, title: '', company: '' };
   try {
     const [{ result }] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: detectApplicationConfirmationPage,
     });
-    return !!result;
+    return result || { isConfirmation: false, title: '', company: '' };
   } catch (err) {
-    return false;
+    return { isConfirmation: false, title: '', company: '' };
   }
 }
 
@@ -424,7 +446,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === 'CHECK_APPLICATION_CONFIRMATION') {
     checkApplicationConfirmationPage()
-      .then((isConfirmationPage) => sendResponse({ ok: true, isConfirmationPage }))
+      .then(({ isConfirmation, title, company }) => sendResponse({
+        ok: true, isConfirmationPage: isConfirmation, extractedTitle: title, extractedCompany: company,
+      }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }
