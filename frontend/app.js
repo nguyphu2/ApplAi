@@ -457,10 +457,15 @@ matchForm.addEventListener('submit', async (event) => {
 
 // --- Applications tab ---
 
-// Stages shown as the funnel proper - Applied is every tracked application
-// regardless of current status, the rest are counted by current status
-// only (the data model has no status-history log, so these are snapshot
-// counts, not true cumulative pass-through counts - see design note).
+// Main pipeline stages, left to right. Sankey node height at stage i is
+// the CUMULATIVE count of applications whose status is stage i or later
+// in this list (an app currently at "3rd Stage" is assumed to have
+// flowed through 1st and 2nd first - the data model has no status-history
+// log, so this ordinal assumption is the best honest approximation of
+// "how far did each application get" available). Rejected/Offer Declined
+// are terminal outcomes that could have happened after any round, so they
+// are NOT drawn as a flow off a specific stage (that would fabricate which
+// round they exited at) - they stay as separate outcome badges.
 const FUNNEL_STAGES = ['Applied', '1st Stage', '2nd Stage', '3rd Stage', 'Offer'];
 const FUNNEL_OUTCOME_STATUSES = ['Rejected', 'Offer Declined'];
 const FUNNEL_SHADES = ['#0a1f44', '#1e50c4', '#3b82f6', '#60a5fa', '#93c5fd'];
@@ -476,66 +481,94 @@ function applicationsStatusCounts() {
   return counts;
 }
 
+// counts[i] = how many applications reached FUNNEL_STAGES[i] or later,
+// restricted to applications currently in one of the 5 ordered stages
+// (Rejected/Offer Declined are excluded from this chain entirely).
+function funnelCumulativeCounts(exactCounts) {
+  const cumulative = new Array(FUNNEL_STAGES.length).fill(0);
+  for (let i = FUNNEL_STAGES.length - 1; i >= 0; i--) {
+    cumulative[i] = exactCounts[FUNNEL_STAGES[i]] + (i + 1 < FUNNEL_STAGES.length ? cumulative[i + 1] : 0);
+  }
+  return cumulative;
+}
+
 function toggleApplicationsStatusFilter(status) {
   applicationsStatusFilter = applicationsStatusFilter === status ? null : status;
   renderApplicationsFunnel();
   renderApplicationsTable();
 }
 
+function sankeyRibbonPath(x1, x2, width, yTop) {
+  const yBottom = yTop + width;
+  const midX = (x1 + x2) / 2;
+  return `M ${x1} ${yTop} C ${midX} ${yTop} ${midX} ${yTop} ${x2} ${yTop} `
+    + `L ${x2} ${yBottom} C ${midX} ${yBottom} ${midX} ${yBottom} ${x1} ${yBottom} Z`;
+}
+
 function renderApplicationsFunnel() {
-  const counts = applicationsStatusCounts();
-  const maxCount = Math.max(1, ...FUNNEL_STAGES.map((s) => counts[s]));
-  const svgWidth = 420;
-  const barMaxWidth = 380;
-  const barHeight = 34;
-  const gap = 6;
-  const svgHeight = FUNNEL_STAGES.length * (barHeight + gap) - gap;
+  const exactCounts = applicationsStatusCounts();
+  const cumulative = funnelCumulativeCounts(exactCounts);
+  const maxCount = Math.max(1, cumulative[0]);
+
+  const svgWidth = 460;
+  const svgHeight = 220;
+  const nodeWidth = 14;
+  const topY = 14;
+  const maxNodeHeight = svgHeight - topY * 2;
+  const scale = maxNodeHeight / maxCount;
+  const columnGap = (svgWidth - nodeWidth * FUNNEL_STAGES.length) / (FUNNEL_STAGES.length - 1) + nodeWidth;
 
   const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+  svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight + 24}`);
   svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', 'Application pipeline funnel by status');
+  svg.setAttribute('aria-label', 'Application pipeline flow by status');
   svg.classList.add('funnel-svg');
 
+  const xFor = (i) => i * columnGap;
+
+  // Ribbons first (so node rectangles paint on top of the flow at each end).
+  for (let i = 0; i < FUNNEL_STAGES.length - 1; i++) {
+    const flowCount = cumulative[i + 1];
+    if (flowCount <= 0) continue;
+    const width = Math.max(flowCount * scale, 1.5);
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', sankeyRibbonPath(xFor(i) + nodeWidth, xFor(i + 1), width, topY));
+    path.classList.add('funnel-ribbon');
+    const title = document.createElementNS(SVG_NS, 'title');
+    title.textContent = `${flowCount} reached ${FUNNEL_STAGES[i + 1]}`;
+    path.appendChild(title);
+    svg.appendChild(path);
+  }
+
   FUNNEL_STAGES.forEach((stage, i) => {
-    const count = counts[stage];
-    const width = count > 0 ? Math.max((count / maxCount) * barMaxWidth, 8) : 0;
-    const x = (svgWidth - width) / 2;
-    const y = i * (barHeight + gap);
+    const cumulativeHeight = Math.max(cumulative[i] * scale, cumulative[i] > 0 ? 1.5 : 0);
+    const x = xFor(i);
 
     const g = document.createElementNS(SVG_NS, 'g');
-    g.classList.add('funnel-bar');
+    g.classList.add('funnel-node');
     if (applicationsStatusFilter === stage) g.classList.add('active');
     g.setAttribute('tabindex', '0');
     g.setAttribute('role', 'button');
     g.setAttribute('aria-pressed', String(applicationsStatusFilter === stage));
 
-    const track = document.createElementNS(SVG_NS, 'rect');
-    track.setAttribute('x', (svgWidth - barMaxWidth) / 2);
-    track.setAttribute('y', y);
-    track.setAttribute('width', barMaxWidth);
-    track.setAttribute('height', barHeight);
-    track.classList.add('funnel-bar-track');
-    g.appendChild(track);
-
     const rect = document.createElementNS(SVG_NS, 'rect');
     rect.setAttribute('x', x);
-    rect.setAttribute('y', y);
-    rect.setAttribute('width', width);
-    rect.setAttribute('height', barHeight);
+    rect.setAttribute('y', topY);
+    rect.setAttribute('width', nodeWidth);
+    rect.setAttribute('height', cumulativeHeight);
     rect.setAttribute('fill', FUNNEL_SHADES[i]);
     g.appendChild(rect);
 
     const title = document.createElementNS(SVG_NS, 'title');
-    title.textContent = `${stage}: ${count}`;
+    title.textContent = `${stage}: ${exactCounts[stage]} currently here (${cumulative[i]} reached this stage or later)`;
     g.appendChild(title);
 
     const label = document.createElementNS(SVG_NS, 'text');
-    label.setAttribute('x', svgWidth / 2);
-    label.setAttribute('y', y + barHeight / 2 + 4);
+    label.setAttribute('x', x + nodeWidth / 2);
+    label.setAttribute('y', topY + maxNodeHeight + 16);
     label.setAttribute('text-anchor', 'middle');
-    label.classList.add('funnel-bar-label');
-    label.textContent = `${stage} (${count})`;
+    label.classList.add('funnel-node-label');
+    label.textContent = `${stage} (${exactCounts[stage]})`;
     g.appendChild(label);
 
     function activate() {
@@ -561,7 +594,7 @@ function renderApplicationsFunnel() {
     const badge = document.createElement('button');
     badge.type = 'button';
     badge.className = `funnel-outcome-badge${applicationsStatusFilter === status ? ' active' : ''}`;
-    badge.textContent = `${status}: ${counts[status]}`;
+    badge.textContent = `${status}: ${exactCounts[status]}`;
     badge.addEventListener('click', () => toggleApplicationsStatusFilter(status));
     outcomes.appendChild(badge);
   });

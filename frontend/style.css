@@ -811,35 +811,34 @@ input[type="file"]::-webkit-file-upload-button {
   margin: 0 auto;
 }
 
-.funnel-bar-track {
-  fill: var(--panel-bg-alt);
+.funnel-ribbon {
+  fill: var(--blue);
+  opacity: 0.18;
+  pointer-events: none;
 }
 
-.funnel-bar {
+.funnel-node {
   outline: none;
 }
 
-.funnel-bar rect:not(.funnel-bar-track) {
+.funnel-node rect {
   transition: opacity 0.1s ease;
 }
 
-.funnel-bar:hover rect:not(.funnel-bar-track),
-.funnel-bar:focus-visible rect:not(.funnel-bar-track) {
+.funnel-node:hover rect,
+.funnel-node:focus-visible rect {
   opacity: 0.8;
 }
 
-.funnel-bar.active rect:not(.funnel-bar-track) {
+.funnel-node.active rect {
   stroke: var(--border);
   stroke-width: 2;
 }
 
-.funnel-bar-label {
+.funnel-node-label {
   font-family: inherit;
-  font-size: 11px;
-  fill: #ffffff;
-  paint-order: stroke;
-  stroke: rgba(10, 19, 48, 0.55);
-  stroke-width: 3px;
+  font-size: 10px;
+  fill: var(--text-muted);
   pointer-events: none;
 }
 
