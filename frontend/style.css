@@ -805,7 +805,7 @@ input[type="file"]::-webkit-file-upload-button {
 
 .funnel-svg {
   width: 100%;
-  max-width: 780px;
+  max-width: 950px;
   height: auto;
   display: block;
   margin: 0 auto;
@@ -856,6 +856,15 @@ input[type="file"]::-webkit-file-upload-button {
   pointer-events: none;
 }
 
+#applications-search {
+  width: 100%;
+  margin-bottom: 0.9rem;
+}
+
+#applications-table-wrap {
+  overflow-x: auto;
+}
+
 #applications-table {
   width: 100%;
   border-collapse: collapse;
@@ -869,10 +878,54 @@ input[type="file"]::-webkit-file-upload-button {
   border-bottom: 2px solid var(--panel-bg-alt);
 }
 
+#applications-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+#applications-table th.sortable:hover {
+  color: var(--blue-bright);
+}
+
+#applications-table th.sortable::after {
+  content: '';
+  display: inline-block;
+  width: 0.7em;
+}
+
+#applications-table th.sortable.sorted-asc::after {
+  content: '▲';
+  font-size: 0.5rem;
+}
+
+#applications-table th.sortable.sorted-desc::after {
+  content: '▼';
+  font-size: 0.5rem;
+}
+
 #applications-table select {
   font-family: inherit;
   font-size: 0.55rem;
   padding: 0.3rem;
+}
+
+#applications-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  margin-top: 0.9rem;
+}
+
+#applications-pagination button {
+  width: auto;
+  margin-top: 0;
+}
+
+#applications-page-info {
+  font-size: 0.55rem;
+  color: var(--text-muted);
 }
 
 .job-applied-toggle {

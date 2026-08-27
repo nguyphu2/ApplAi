@@ -32,8 +32,8 @@
     <main>
       <section id="search-section">
         <form id="match-form">
-          <label for="filter-title">Job title</label>
-          <input type="text" id="filter-title" placeholder="e.g. Software Engineer Intern" />
+          <label for="filter-title">Job title or company</label>
+          <input type="text" id="filter-title" placeholder="e.g. Software Engineer Intern or Tesla" />
 
           <div class="filters-dropdown">
             <button type="button" id="filters-toggle" class="secondary">
@@ -189,21 +189,27 @@
         </div>
         <div id="applications-logged-in" class="hidden">
           <div id="applications-funnel" class="applications-funnel"></div>
+          <input type="text" id="applications-search" placeholder="Search by company or title..." />
           <div id="applications-table-wrap">
             <table id="applications-table">
               <thead>
                 <tr>
-                  <th>Company</th>
-                  <th>Title</th>
-                  <th>Status</th>
-                  <th>Resume</th>
-                  <th>Applied</th>
+                  <th class="sortable" data-sort-key="company">Company</th>
+                  <th class="sortable" data-sort-key="title">Title</th>
+                  <th class="sortable" data-sort-key="status">Status</th>
+                  <th class="sortable" data-sort-key="resume">Resume</th>
+                  <th class="sortable" data-sort-key="applied_at">Date Applied</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody id="applications-table-body"></tbody>
             </table>
             <p id="applications-empty" class="hidden">No applications tracked yet — mark a job as applied from your search results or the extension.</p>
+            <div id="applications-pagination" class="hidden">
+              <button type="button" id="applications-prev-page" class="secondary">Prev</button>
+              <span id="applications-page-info"></span>
+              <button type="button" id="applications-next-page" class="secondary">Next</button>
+            </div>
           </div>
         </div>
       </section>

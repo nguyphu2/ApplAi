@@ -35,8 +35,12 @@ def job_matches_filters(job, filters):
         return False
 
     title = filters.get('title')
-    if title and title.lower() not in (job.get('title') or '').lower():
-        return False
+    if title:
+        title_query = title.lower()
+        matches_title = title_query in (job.get('title') or '').lower()
+        matches_company = title_query in (job.get('company') or '').lower()
+        if not (matches_title or matches_company):
+            return False
 
     if filters.get('remote') and not job.get('remote'):
         return False

@@ -14,8 +14,13 @@ const profileLoggedIn = document.getElementById('profile-logged-in');
 const applicationsLoggedOut = document.getElementById('applications-logged-out');
 const applicationsLoggedIn = document.getElementById('applications-logged-in');
 const applicationsFunnelEl = document.getElementById('applications-funnel');
+const applicationsSearchInput = document.getElementById('applications-search');
 const applicationsTableBody = document.getElementById('applications-table-body');
 const applicationsEmptyEl = document.getElementById('applications-empty');
+const applicationsPaginationEl = document.getElementById('applications-pagination');
+const applicationsPageInfoEl = document.getElementById('applications-page-info');
+const applicationsPrevPageBtn = document.getElementById('applications-prev-page');
+const applicationsNextPageBtn = document.getElementById('applications-next-page');
 const APPLICATIONS_EMPTY_TEXT = applicationsEmptyEl.textContent;
 const profileSkillsText = document.getElementById('profile-skills-text');
 const profileStatus = document.getElementById('profile-status');
@@ -523,6 +528,7 @@ function funnelCumulativeCounts(exactCounts) {
 
 function toggleApplicationsStatusFilter(status) {
   applicationsStatusFilter = applicationsStatusFilter === status ? null : status;
+  applicationsPage = 1;
   renderApplicationsFunnel();
   renderApplicationsTable();
 }
@@ -596,12 +602,15 @@ function renderApplicationsFunnel() {
   const total = applications.length;
   const maxCount = Math.max(1, total);
 
-  const svgWidth = 780;
+  const columnStep = FUNNEL_NODE_WIDTH + FUNNEL_RIBBON_WIDTH;
+  // Sized to the actual number of stages, not a fixed guess - a fixed
+  // width silently clipped "Offer Declined" off the right edge once the
+  // chain grew from 5 to 6 stages.
+  const svgWidth = FUNNEL_STAGES.length * FUNNEL_NODE_WIDTH + (FUNNEL_STAGES.length - 1) * FUNNEL_RIBBON_WIDTH + 20;
   const topY = 16;
   const mainRowMaxHeight = 190;
   const branchGap = 34;
   const scale = mainRowMaxHeight / maxCount;
-  const columnStep = FUNNEL_NODE_WIDTH + FUNNEL_RIBBON_WIDTH;
 
   const xFor = (i) => i * columnStep;
   const heightFor = (count) => (count > 0 ? Math.max(count * scale, FUNNEL_MIN_BLOCK_HEIGHT) : 0);
@@ -669,24 +678,68 @@ function renderApplicationsFunnel() {
   applicationsFunnelEl.appendChild(svg);
 }
 
+const APPLICATIONS_PAGE_SIZE = 10;
+let applicationsSearchQuery = '';
+let applicationsSortKey = 'applied_at';
+let applicationsSortDir = 'desc';
+let applicationsPage = 1;
+
+function applicationSortValue(a, resume, key) {
+  if (key === 'company') return (a.company || '').toLowerCase();
+  if (key === 'title') return (a.title || '').toLowerCase();
+  if (key === 'status') return (a.status || '').toLowerCase();
+  if (key === 'resume') return resume ? resume.filename.toLowerCase() : '';
+  if (key === 'applied_at') return a.applied_at || '';
+  return '';
+}
+
+function updateApplicationsSortIndicators() {
+  document.querySelectorAll('#applications-table th.sortable').forEach((th) => {
+    th.classList.toggle('sorted-asc', th.dataset.sortKey === applicationsSortKey && applicationsSortDir === 'asc');
+    th.classList.toggle('sorted-desc', th.dataset.sortKey === applicationsSortKey && applicationsSortDir === 'desc');
+  });
+}
+
 function renderApplicationsTable() {
-  const filtered = applicationsStatusFilter
-    ? applications.filter((a) => a.status === applicationsStatusFilter)
-    : applications;
+  const withResumes = applications.map((a) => ({ app: a, resume: profileSettings.resumes.find((r) => r.id === a.resume_id) }));
+
+  const query = applicationsSearchQuery.trim().toLowerCase();
+  let filtered = withResumes.filter(({ app }) => !applicationsStatusFilter || app.status === applicationsStatusFilter);
+  if (query) {
+    filtered = filtered.filter(({ app }) => (app.company || '').toLowerCase().includes(query) || (app.title || '').toLowerCase().includes(query));
+  }
+
+  filtered.sort((a, b) => {
+    const va = applicationSortValue(a.app, a.resume, applicationsSortKey);
+    const vb = applicationSortValue(b.app, b.resume, applicationsSortKey);
+    const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+    return applicationsSortDir === 'asc' ? cmp : -cmp;
+  });
 
   if (applications.length === 0) {
     applicationsEmptyEl.textContent = APPLICATIONS_EMPTY_TEXT;
   } else if (filtered.length === 0) {
-    applicationsEmptyEl.textContent = `No applications with status "${applicationsStatusFilter}".`;
+    applicationsEmptyEl.textContent = query || applicationsStatusFilter
+      ? 'No applications match your search/filter.'
+      : 'No applications tracked yet.';
   }
   applicationsEmptyEl.classList.toggle('hidden', filtered.length > 0);
-  const sorted = [...filtered].sort((a, b) => (b.applied_at || '').localeCompare(a.applied_at || ''));
+  updateApplicationsSortIndicators();
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / APPLICATIONS_PAGE_SIZE));
+  if (applicationsPage > totalPages) applicationsPage = totalPages;
+  if (applicationsPage < 1) applicationsPage = 1;
+  const pageStart = (applicationsPage - 1) * APPLICATIONS_PAGE_SIZE;
+  const pageItems = filtered.slice(pageStart, pageStart + APPLICATIONS_PAGE_SIZE);
+
+  applicationsPaginationEl.classList.toggle('hidden', filtered.length <= APPLICATIONS_PAGE_SIZE);
+  applicationsPageInfoEl.textContent = `Page ${applicationsPage} of ${totalPages}`;
+  applicationsPrevPageBtn.disabled = applicationsPage <= 1;
+  applicationsNextPageBtn.disabled = applicationsPage >= totalPages;
 
   applicationsTableBody.innerHTML = '';
 
-  sorted.forEach((a) => {
-    const resume = profileSettings.resumes.find((r) => r.id === a.resume_id);
-
+  pageItems.forEach(({ app: a, resume }) => {
     const row = document.createElement('tr');
     row.dataset.applicationId = a.application_id;
 
@@ -765,6 +818,36 @@ async function loadApplications() {
   renderApplicationsFunnel();
   renderApplicationsTable();
 }
+
+applicationsSearchInput.addEventListener('input', () => {
+  applicationsSearchQuery = applicationsSearchInput.value;
+  applicationsPage = 1;
+  renderApplicationsTable();
+});
+
+document.querySelectorAll('#applications-table th.sortable').forEach((th) => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sortKey;
+    if (applicationsSortKey === key) {
+      applicationsSortDir = applicationsSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      applicationsSortKey = key;
+      applicationsSortDir = 'asc';
+    }
+    applicationsPage = 1;
+    renderApplicationsTable();
+  });
+});
+
+applicationsPrevPageBtn.addEventListener('click', () => {
+  applicationsPage -= 1;
+  renderApplicationsTable();
+});
+
+applicationsNextPageBtn.addEventListener('click', () => {
+  applicationsPage += 1;
+  renderApplicationsTable();
+});
 
 // --- Profile tab ---
 
