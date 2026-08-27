@@ -390,10 +390,6 @@ form button[type="submit"] {
   font-family: "Press Start 2P", monospace;
 }
 
-.job-card.applied {
-  border-color: var(--success);
-}
-
 .match-bar-row {
   display: flex;
   align-items: center;

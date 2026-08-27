@@ -272,7 +272,7 @@ function renderMatches() {
   const appliedByUrl = applicationsByUrl();
 
   resultsEl.innerHTML = matches.map((job) => `
-    <div class="job-card${job.listing_url && appliedByUrl.has(normalizeUrl(job.listing_url)) ? ' applied' : ''}" data-job-id="${job.job_id}" data-listing-url="${job.listing_url}">
+    <div class="job-card" data-job-id="${job.job_id}" data-listing-url="${job.listing_url}">
       ${job.match_score !== null && job.match_score !== undefined ? `
         <div class="match-bar-row">
           <div class="match-bar-track"><div class="match-bar-fill" style="width: ${job.match_score}%; background: ${matchBarColor(job.match_score)}"></div></div>
@@ -379,7 +379,6 @@ function renderMatches() {
           applications = applications.filter((a) => a.application_id !== existing.application_id);
           btn.textContent = 'Mark applied';
           btn.classList.remove('applied');
-          card.classList.remove('applied');
         } else {
           const activeResumeIds = profileSettings.active_resume_ids || [];
           const resumeId = activeResumeIds.length === 1 ? activeResumeIds[0] : null;
@@ -393,7 +392,6 @@ function renderMatches() {
           applications = [...applications, created];
           btn.textContent = '✓ Applied';
           btn.classList.add('applied');
-          card.classList.add('applied');
         }
       } catch (err) {
         showComicBubble(btn, err.message || "Couldn't update — try again.");
