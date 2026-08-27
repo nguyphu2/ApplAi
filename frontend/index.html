@@ -188,28 +188,50 @@
           <p>Log in to view your applications.</p>
         </div>
         <div id="applications-logged-in" class="hidden">
-          <div id="applications-funnel" class="applications-funnel"></div>
-          <input type="text" id="applications-search" placeholder="Search by company or title..." />
-          <div id="applications-table-wrap">
-            <table id="applications-table">
+          <nav class="applications-subnav">
+            <button type="button" id="applications-subtab-tracked" class="active">Tracked Applications</button>
+            <button type="button" id="applications-subtab-uninterested">Uninterested</button>
+          </nav>
+
+          <div id="applications-tracked-view">
+            <div id="applications-funnel" class="applications-funnel"></div>
+            <input type="text" id="applications-search" placeholder="Search by company or title..." />
+            <div id="applications-table-wrap">
+              <table id="applications-table">
+                <thead>
+                  <tr>
+                    <th class="sortable" data-sort-key="company">Company</th>
+                    <th class="sortable" data-sort-key="title">Title</th>
+                    <th class="sortable" data-sort-key="status">Status</th>
+                    <th class="sortable" data-sort-key="resume">Resume</th>
+                    <th class="sortable" data-sort-key="applied_at">Date Applied</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="applications-table-body"></tbody>
+              </table>
+              <p id="applications-empty" class="hidden">No applications tracked yet — mark a job as applied from your search results or the extension.</p>
+              <div id="applications-pagination" class="hidden">
+                <button type="button" id="applications-prev-page" class="secondary">Prev</button>
+                <span id="applications-page-info"></span>
+                <button type="button" id="applications-next-page" class="secondary">Next</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="applications-uninterested-view" class="hidden">
+            <table id="uninterested-table">
               <thead>
                 <tr>
-                  <th class="sortable" data-sort-key="company">Company</th>
-                  <th class="sortable" data-sort-key="title">Title</th>
-                  <th class="sortable" data-sort-key="status">Status</th>
-                  <th class="sortable" data-sort-key="resume">Resume</th>
-                  <th class="sortable" data-sort-key="applied_at">Date Applied</th>
+                  <th>Company</th>
+                  <th>Title</th>
+                  <th>Marked</th>
                   <th></th>
                 </tr>
               </thead>
-              <tbody id="applications-table-body"></tbody>
+              <tbody id="uninterested-table-body"></tbody>
             </table>
-            <p id="applications-empty" class="hidden">No applications tracked yet — mark a job as applied from your search results or the extension.</p>
-            <div id="applications-pagination" class="hidden">
-              <button type="button" id="applications-prev-page" class="secondary">Prev</button>
-              <span id="applications-page-info"></span>
-              <button type="button" id="applications-next-page" class="secondary">Next</button>
-            </div>
+            <p id="uninterested-empty" class="hidden">No uninterested jobs — mark a job as uninterested from your search results to hide it from future searches.</p>
           </div>
         </div>
       </section>

@@ -928,6 +928,53 @@ input[type="file"]::-webkit-file-upload-button {
   color: var(--text-muted);
 }
 
+.applications-subnav {
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+  border-bottom: 2px solid var(--panel-bg-alt);
+}
+
+.applications-subnav button {
+  width: auto;
+  margin-top: 0;
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-bottom: 3px solid transparent;
+  clip-path: none;
+  filter: none;
+  padding: 0.6rem 0.2rem;
+  border-radius: 0;
+}
+
+.applications-subnav button:hover {
+  background: transparent;
+  color: var(--blue-bright);
+}
+
+.applications-subnav button:active {
+  transform: none;
+}
+
+.applications-subnav button.active {
+  color: var(--blue-bright);
+  border-bottom-color: var(--blue);
+}
+
+#uninterested-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.6rem;
+}
+
+#uninterested-table th,
+#uninterested-table td {
+  text-align: left;
+  padding: 0.6rem 0.5rem;
+  border-bottom: 2px solid var(--panel-bg-alt);
+}
+
 .job-applied-toggle {
   cursor: pointer;
   border: 2px solid var(--border);
@@ -943,4 +990,15 @@ input[type="file"]::-webkit-file-upload-button {
   background: var(--success);
   color: #ffffff;
   border-color: var(--success);
+}
+
+.uninterested-btn {
+  cursor: pointer;
+  border: 2px solid var(--error-border);
+  background: var(--error-bg);
+  color: var(--error);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.55rem;
+  display: block;
+  margin-top: 0.5rem;
 }

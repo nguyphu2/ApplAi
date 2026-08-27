@@ -223,6 +223,26 @@ async function checkApplied(url) {
   return applications.find((a) => a.url_normalized === normalized) || null;
 }
 
+async function deleteApplicationRecord(applicationId) {
+  const { id_token } = await chrome.storage.local.get('id_token');
+  if (!id_token) {
+    throw new Error('not logged in');
+  }
+  const response = await fetch(`${API_BASE}/applications/${applicationId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${id_token}` },
+  });
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      await chrome.storage.local.remove(['id_token', 'access_token']);
+      throw new Error('your session expired — please log in again');
+    }
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || 'could not remove application');
+  }
+  return response.json();
+}
+
 // Runs inside the page (via executeScript) to decide if this looks like a
 // job description/posting page, as opposed to an application form or an
 // unrelated page - self-contained, no closures over background.js state,
@@ -441,6 +461,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'CHECK_APPLIED') {
     checkApplied(message.payload.url)
       .then((application) => sendResponse({ ok: true, application }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (message.type === 'DELETE_APPLICATION') {
+    deleteApplicationRecord(message.payload.applicationId)
+      .then(() => sendResponse({ ok: true }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }

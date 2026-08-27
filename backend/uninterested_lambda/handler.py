@@ -1,12 +1,14 @@
 """Triggered by API Gateway, behind a Cognito JWT authorizer. Lets a
 logged-in user mark a catalog job as "uninterested" so query_lambda can
-exclude it from that user's future search results.
+exclude it from that user's future search results, list what they've
+marked, and un-mark ("bring back") an entry.
 """
 import json
 import os
 from datetime import datetime, timezone
 
 import boto3
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
@@ -27,6 +29,14 @@ def handler(event, context):
     path_params = event.get('pathParameters') or {}
     job_id = path_params.get('job_id')
 
+    if method == 'GET':
+        try:
+            response = table.query(KeyConditionExpression=Key('user_id').eq(user_id))
+        except ClientError as e:
+            print(f'DynamoDB query failed: {e}')
+            return {'statusCode': 502, 'body': json.dumps({'error': 'uninterested service failed'})}
+        return {'statusCode': 200, 'body': json.dumps({'uninterested': response.get('Items', [])})}
+
     if method == 'POST':
         body = json.loads(event.get('body') or '{}')
         job_id = body.get('job_id')
@@ -36,6 +46,9 @@ def handler(event, context):
             table.put_item(Item={
                 'user_id': user_id,
                 'job_id': job_id,
+                'title': body.get('title') or '',
+                'company': body.get('company') or '',
+                'url': body.get('url') or '',
                 'marked_at': datetime.now(timezone.utc).isoformat(),
             })
         except ClientError as e:

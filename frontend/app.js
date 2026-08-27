@@ -1,5 +1,5 @@
 import { login, logout, handleCallback, isLoggedIn } from './auth.js';
-import { search, analyze, getSettings, putSettings, autocompleteLocation, listApplications, createApplication, updateApplicationStatus, deleteApplication, markUninterested } from './api.js';
+import { search, analyze, getSettings, putSettings, autocompleteLocation, listApplications, createApplication, updateApplicationStatus, deleteApplication, markUninterested, listUninterested, unmarkUninterested } from './api.js';
 
 const loginBtn = document.getElementById('login-btn');
 const logoutBtn = document.getElementById('logout-btn');
@@ -21,6 +21,12 @@ const applicationsPaginationEl = document.getElementById('applications-paginatio
 const applicationsPageInfoEl = document.getElementById('applications-page-info');
 const applicationsPrevPageBtn = document.getElementById('applications-prev-page');
 const applicationsNextPageBtn = document.getElementById('applications-next-page');
+const applicationsSubtabTracked = document.getElementById('applications-subtab-tracked');
+const applicationsSubtabUninterested = document.getElementById('applications-subtab-uninterested');
+const applicationsTrackedView = document.getElementById('applications-tracked-view');
+const applicationsUninterestedView = document.getElementById('applications-uninterested-view');
+const uninterestedTableBody = document.getElementById('uninterested-table-body');
+const uninterestedEmptyEl = document.getElementById('uninterested-empty');
 const APPLICATIONS_EMPTY_TEXT = applicationsEmptyEl.textContent;
 const profileSkillsText = document.getElementById('profile-skills-text');
 const profileStatus = document.getElementById('profile-status');
@@ -411,6 +417,7 @@ function renderMatches() {
       event.stopPropagation();
       const card = btn.closest('.job-card');
       const jobId = card.dataset.jobId;
+      const job = allMatches.find((m) => m.job_id === jobId);
 
       if (!isLoggedIn()) {
         showComicBubble(btn, '🔒 Log in or sign up first.');
@@ -419,7 +426,7 @@ function renderMatches() {
 
       btn.disabled = true;
       try {
-        await markUninterested(jobId);
+        await markUninterested(job);
         lastMatches = lastMatches.filter((m) => m.job_id !== jobId);
         renderMatches();
       } catch (err) {
@@ -819,6 +826,82 @@ async function loadApplications() {
   renderApplicationsTable();
 }
 
+// --- Uninterested sub-page ---
+
+let uninterestedJobs = [];
+let uninterestedLoaded = false;
+
+function renderUninterestedTable() {
+  uninterestedEmptyEl.classList.toggle('hidden', uninterestedJobs.length > 0);
+  const sorted = [...uninterestedJobs].sort((a, b) => (b.marked_at || '').localeCompare(a.marked_at || ''));
+
+  uninterestedTableBody.innerHTML = '';
+  sorted.forEach((job) => {
+    const row = document.createElement('tr');
+
+    const companyCell = document.createElement('td');
+    companyCell.textContent = job.company || '—';
+
+    const titleCell = document.createElement('td');
+    if (job.url) {
+      const link = document.createElement('a');
+      link.href = job.url;
+      link.textContent = job.title || '—';
+      link.target = '_blank';
+      link.rel = 'noopener';
+      titleCell.appendChild(link);
+    } else {
+      titleCell.textContent = job.title || '—';
+    }
+
+    const markedCell = document.createElement('td');
+    markedCell.textContent = job.marked_at ? new Date(job.marked_at).toLocaleDateString() : '—';
+
+    const bringBackCell = document.createElement('td');
+    const bringBackBtn = document.createElement('button');
+    bringBackBtn.type = 'button';
+    bringBackBtn.className = 'secondary';
+    bringBackBtn.textContent = 'Bring back';
+    bringBackBtn.addEventListener('click', async () => {
+      bringBackBtn.disabled = true;
+      try {
+        await unmarkUninterested(job.job_id);
+        uninterestedJobs = uninterestedJobs.filter((j) => j.job_id !== job.job_id);
+        renderUninterestedTable();
+      } catch (err) {
+        bringBackBtn.disabled = false;
+        bringBackBtn.textContent = "Couldn't restore — try again";
+      }
+    });
+    bringBackCell.appendChild(bringBackBtn);
+
+    row.append(companyCell, titleCell, markedCell, bringBackCell);
+    uninterestedTableBody.appendChild(row);
+  });
+}
+
+async function activateApplicationsSubtab(name) {
+  applicationsSubtabTracked.classList.toggle('active', name === 'tracked');
+  applicationsSubtabUninterested.classList.toggle('active', name === 'uninterested');
+  applicationsTrackedView.classList.toggle('hidden', name !== 'tracked');
+  applicationsUninterestedView.classList.toggle('hidden', name !== 'uninterested');
+
+  if (name === 'uninterested' && !uninterestedLoaded) {
+    try {
+      uninterestedJobs = (await listUninterested()).uninterested;
+      uninterestedLoaded = true;
+      renderUninterestedTable();
+    } catch (err) {
+      console.error('failed to load uninterested jobs:', err);
+      uninterestedEmptyEl.textContent = "Couldn't load your uninterested jobs — try again.";
+      uninterestedEmptyEl.classList.remove('hidden');
+    }
+  }
+}
+
+applicationsSubtabTracked.addEventListener('click', () => activateApplicationsSubtab('tracked'));
+applicationsSubtabUninterested.addEventListener('click', () => activateApplicationsSubtab('uninterested'));
+
 applicationsSearchInput.addEventListener('input', () => {
   applicationsSearchQuery = applicationsSearchInput.value;
   applicationsPage = 1;
@@ -1047,6 +1130,7 @@ async function activateApplicationsTab() {
   applicationsLoggedOut.classList.toggle('hidden', isLoggedIn());
   applicationsLoggedIn.classList.toggle('hidden', !isLoggedIn());
   if (!isLoggedIn()) return;
+  await activateApplicationsSubtab('tracked');
   try {
     if (!profileSettingsLoaded) {
       profileSettings = await getSettings();

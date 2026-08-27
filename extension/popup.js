@@ -186,9 +186,32 @@ optimizeBtn.addEventListener('click', async () => {
   await saveStoredResult(tab, result);
 });
 
+let currentApplicationId = null;
+
 markAppliedBtn.addEventListener('click', async () => {
   const tab = await getActiveTab();
   if (!tab) return;
+
+  if (markAppliedBtn.classList.contains('success')) {
+    // Toggle off - un-mark applied. Deletes the same record the website's
+    // Applications tab and job-card checkmark read from, so both reflect
+    // the removal the next time they load.
+    if (!currentApplicationId) return;
+    markAppliedBtn.disabled = true;
+    markAppliedBtn.textContent = 'Removing...';
+    const response = await sendMessage({ type: 'DELETE_APPLICATION', payload: { applicationId: currentApplicationId } });
+    markAppliedBtn.disabled = false;
+    if (!response || !response.ok) {
+      statusEl.textContent = (response && response.error) || 'Could not remove.';
+      markAppliedBtn.textContent = '✓ Marked applied';
+      return;
+    }
+    currentApplicationId = null;
+    markAppliedBtn.classList.remove('success');
+    markAppliedBtn.textContent = 'Mark as applied';
+    statusEl.textContent = '';
+    return;
+  }
 
   markAppliedBtn.disabled = true;
   markAppliedBtn.textContent = 'Marking...';
@@ -211,14 +234,15 @@ markAppliedBtn.addEventListener('click', async () => {
       return;
     }
 
+    currentApplicationId = response.application.application_id;
     markAppliedBtn.textContent = '✓ Marked applied';
     markAppliedBtn.classList.add('success');
     return;
   } catch (err) {
     statusEl.textContent = err.message || 'Could not mark as applied.';
   } finally {
+    markAppliedBtn.disabled = false;
     if (!markAppliedBtn.classList.contains('success')) {
-      markAppliedBtn.disabled = false;
       markAppliedBtn.textContent = 'Mark as applied';
     }
   }
@@ -305,9 +329,9 @@ async function checkAppliedState(tab) {
   if (!tab) return;
   const response = await sendMessage({ type: 'CHECK_APPLIED', payload: { url: tab.url } });
   if (response.ok && response.application) {
+    currentApplicationId = response.application.application_id;
     markAppliedBtn.textContent = '✓ Marked applied';
     markAppliedBtn.classList.add('success');
-    markAppliedBtn.disabled = true;
   }
 }
 

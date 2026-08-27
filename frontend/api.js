@@ -86,14 +86,21 @@ export function deleteApplication(applicationId) {
   });
 }
 
-export function markUninterested(jobId) {
+export function markUninterested(job) {
   return request('/uninterested', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${getIdToken()}`,
     },
-    body: JSON.stringify({ job_id: jobId }),
+    body: JSON.stringify({ job_id: job.job_id, title: job.title, company: job.company, url: job.listing_url }),
+  });
+}
+
+export function listUninterested() {
+  return request('/uninterested', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${getIdToken()}` },
   });
 }
 
