@@ -106,7 +106,10 @@ async function getDocxResumes() {
     throw new Error('could not load your resumes');
   }
   const settings = await response.json();
-  return (settings.resumes || []).filter((r) => r.file_type === 'docx');
+  return {
+    resumes: (settings.resumes || []).filter((r) => r.file_type === 'docx'),
+    activeResumeIds: settings.active_resume_ids || [],
+  };
 }
 
 async function optimizeResume({ resumeId, targetMatchPercent, onePage, saveAsNewCopy }) {
@@ -492,7 +495,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === 'GET_DOCX_RESUMES') {
     getDocxResumes()
-      .then((resumes) => sendResponse({ ok: true, resumes }))
+      .then(({ resumes, activeResumeIds }) => sendResponse({ ok: true, resumes, activeResumeIds }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }

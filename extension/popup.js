@@ -12,6 +12,8 @@ const notJobDescriptionPageEl = document.getElementById('not-job-description-pag
 const noResumesEl = document.getElementById('no-resumes');
 const confirmationPromptEl = document.getElementById('application-confirmation-prompt');
 const confirmationJobInfoEl = document.getElementById('confirmation-job-info');
+const confirmationResumeLabel = document.getElementById('confirmation-resume-label');
+const confirmationResumeSelect = document.getElementById('confirmation-resume-select');
 const confirmMarkAppliedBtn = document.getElementById('confirm-mark-applied-btn');
 const dismissConfirmationBtn = document.getElementById('dismiss-confirmation-btn');
 const resultEl = document.getElementById('result');
@@ -264,7 +266,7 @@ confirmMarkAppliedBtn.addEventListener('click', async () => {
 
   const response = await sendMessage({
     type: 'MARK_APPLIED',
-    payload: { resumeId: null, override: jobInfo },
+    payload: { resumeId: confirmationResumeSelect.value || null, override: jobInfo },
   });
 
   if (!response || !response.ok) {
@@ -322,7 +324,36 @@ async function checkApplicationConfirmation(tab) {
   }
 
   confirmationJobInfoEl.textContent = jobInfo.company ? ` to ${jobInfo.title} at ${jobInfo.company}` : ` to ${jobInfo.title}`;
+  await populateConfirmationResumeSelect();
   confirmationPromptEl.classList.remove('hidden');
+}
+
+async function populateConfirmationResumeSelect() {
+  const resumesResponse = await sendMessage({ type: 'GET_DOCX_RESUMES' });
+  confirmationResumeSelect.innerHTML = '';
+  if (!resumesResponse.ok || resumesResponse.resumes.length === 0) {
+    confirmationResumeLabel.classList.add('hidden');
+    confirmationResumeSelect.classList.add('hidden');
+    return;
+  }
+
+  const { resumes, activeResumeIds } = resumesResponse;
+  for (const r of resumes) {
+    const option = document.createElement('option');
+    option.value = r.id;
+    option.textContent = r.filename;
+    confirmationResumeSelect.appendChild(option);
+  }
+  // Default to the single active resume when unambiguous; otherwise leave
+  // the browser's default (first in the list) - the dropdown is visible
+  // either way, so a so-so default just means one extra glance, not a
+  // silent wrong attachment.
+  if (activeResumeIds && activeResumeIds.length === 1 && resumes.some((r) => r.id === activeResumeIds[0])) {
+    confirmationResumeSelect.value = activeResumeIds[0];
+  }
+
+  confirmationResumeLabel.classList.remove('hidden');
+  confirmationResumeSelect.classList.remove('hidden');
 }
 
 // Asks the server (not local per-tab storage) whether this URL is already
