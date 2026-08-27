@@ -385,6 +385,11 @@ async function checkApplicationConfirmationPage() {
 // where scraping the page itself would get the wrong (or no) title/company.
 function extractJobBasics() {
   function guessPageTitle() {
+    // og:title is curated for clean display and present on far more sites
+    // than JobPosting schema (e.g. SmartRecruiters listing pages have none).
+    const ogTitle = document.querySelector('meta[property="og:title"]');
+    if (ogTitle && ogTitle.content) return ogTitle.content.trim();
+
     const raw = document.title.trim();
     const separators = [' | ', ' - ', ' — '];
     for (const sep of separators) {
@@ -410,6 +415,8 @@ function extractJobBasics() {
         if (isJobPosting && name) return String(name).trim();
       }
     }
+    const ogSiteName = document.querySelector('meta[property="og:site_name"]');
+    if (ogSiteName && ogSiteName.content) return ogSiteName.content.trim();
     return '';
   }
   return { title: guessPageTitle(), company: guessCompany() };
