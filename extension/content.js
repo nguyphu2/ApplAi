@@ -86,6 +86,36 @@
     return raw;
   }
 
+  // Most ATS/job-board pages embed schema.org JobPosting structured data
+  // for Google for Jobs indexing - hiringOrganization.name is a far more
+  // reliable company source than trying to parse it out of document.title.
+  function guessCompanyFromStructuredData() {
+    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const script of scripts) {
+      let data;
+      try {
+        data = JSON.parse(script.textContent);
+      } catch {
+        continue;
+      }
+      const candidates = Array.isArray(data) ? data : [data];
+      for (const item of candidates) {
+        const type = item && item['@type'];
+        const isJobPosting = type === 'JobPosting' || (Array.isArray(type) && type.includes('JobPosting'));
+        const name = item && item.hiringOrganization && item.hiringOrganization.name;
+        if (isJobPosting && name) {
+          return String(name).trim();
+        }
+      }
+    }
+    return '';
+  }
+
   const text = (bestJobPostingBlock() || largestTextBlock()).slice(0, 20000);
-  chrome.runtime.sendMessage({ type: 'JOB_DESCRIPTION_SCRAPED', text, pageTitle: guessPageTitle() });
+  chrome.runtime.sendMessage({
+    type: 'JOB_DESCRIPTION_SCRAPED',
+    text,
+    pageTitle: guessPageTitle(),
+    company: guessCompanyFromStructuredData(),
+  });
 })();

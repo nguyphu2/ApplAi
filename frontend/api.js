@@ -12,9 +12,14 @@ async function request(path, options) {
 }
 
 export function search(payload) {
+  // No authorizer on this route - guests search too - but a logged-in
+  // caller's token lets the backend exclude jobs they marked uninterested.
+  const idToken = getIdToken();
+  const headers = { 'Content-Type': 'application/json' };
+  if (idToken) headers.Authorization = `Bearer ${idToken}`;
   return request('/match', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(payload),
   });
 }
@@ -76,6 +81,24 @@ export function updateApplicationStatus(applicationId, status) {
 
 export function deleteApplication(applicationId) {
   return request(`/applications/${applicationId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${getIdToken()}` },
+  });
+}
+
+export function markUninterested(jobId) {
+  return request('/uninterested', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getIdToken()}`,
+    },
+    body: JSON.stringify({ job_id: jobId }),
+  });
+}
+
+export function unmarkUninterested(jobId) {
+  return request(`/uninterested/${jobId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${getIdToken()}` },
   });

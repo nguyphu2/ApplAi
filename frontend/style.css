@@ -805,15 +805,26 @@ input[type="file"]::-webkit-file-upload-button {
 
 .funnel-svg {
   width: 100%;
-  max-width: 480px;
+  max-width: 780px;
   height: auto;
   display: block;
   margin: 0 auto;
 }
 
 .funnel-ribbon {
-  fill: var(--blue);
-  opacity: 0.18;
+  fill: #bfdbfe;
+  pointer-events: none;
+}
+
+.funnel-ribbon-rejected {
+  fill: #f2b6b6;
+}
+
+.funnel-ribbon-label {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: bold;
+  fill: var(--navy);
   pointer-events: none;
 }
 
@@ -827,42 +838,22 @@ input[type="file"]::-webkit-file-upload-button {
 
 .funnel-node:hover rect,
 .funnel-node:focus-visible rect {
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 .funnel-node.active rect {
-  stroke: var(--border);
-  stroke-width: 2;
+  stroke: var(--error);
+  stroke-width: 3;
 }
 
 .funnel-node-label {
   font-family: inherit;
-  font-size: 10px;
-  fill: var(--text-muted);
+  font-size: 11px;
+  fill: #ffffff;
+  paint-order: stroke;
+  stroke: rgba(10, 19, 48, 0.6);
+  stroke-width: 3px;
   pointer-events: none;
-}
-
-.funnel-outcomes {
-  display: flex;
-  justify-content: center;
-  gap: 0.6rem;
-  margin-top: 0.8rem;
-  flex-wrap: wrap;
-}
-
-.funnel-outcome-badge {
-  font-family: inherit;
-  font-size: 0.55rem;
-  padding: 0.4rem 0.7rem;
-  border: 2px solid var(--error-border);
-  background: var(--error-bg);
-  color: var(--error);
-  cursor: pointer;
-}
-
-.funnel-outcome-badge.active {
-  background: var(--error);
-  color: #ffffff;
 }
 
 #applications-table {

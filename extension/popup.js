@@ -10,6 +10,10 @@ const optimizeBtn = document.getElementById('optimize-btn');
 const markAppliedBtn = document.getElementById('mark-applied-btn');
 const notJobDescriptionPageEl = document.getElementById('not-job-description-page');
 const noResumesEl = document.getElementById('no-resumes');
+const confirmationPromptEl = document.getElementById('application-confirmation-prompt');
+const confirmationJobInfoEl = document.getElementById('confirmation-job-info');
+const confirmMarkAppliedBtn = document.getElementById('confirm-mark-applied-btn');
+const dismissConfirmationBtn = document.getElementById('dismiss-confirmation-btn');
 const resultEl = document.getElementById('result');
 const statusEl = document.getElementById('status');
 const progressEl = document.getElementById('optimize-progress');
@@ -198,9 +202,6 @@ markAppliedBtn.addEventListener('click', async () => {
     const response = await sendMessage({
       type: 'MARK_APPLIED',
       payload: {
-        title: tab.title || 'Untitled posting',
-        company: '',
-        url: tab.url,
         resumeId: hasResultForThisPage ? (resumeSelect.value || null) : null,
       },
     });
@@ -222,6 +223,67 @@ markAppliedBtn.addEventListener('click', async () => {
     }
   }
 });
+
+confirmMarkAppliedBtn.addEventListener('click', async () => {
+  const tab = await getActiveTab();
+  if (!tab) return;
+  const key = `lastJobInfo_${tab.id}`;
+  const stored = await chrome.storage.local.get(key);
+  const jobInfo = stored[key];
+  if (!jobInfo) {
+    confirmationPromptEl.classList.add('hidden');
+    return;
+  }
+
+  confirmMarkAppliedBtn.disabled = true;
+  confirmMarkAppliedBtn.textContent = 'Marking...';
+
+  const response = await sendMessage({
+    type: 'MARK_APPLIED',
+    payload: { resumeId: null, override: jobInfo },
+  });
+
+  if (!response || !response.ok) {
+    statusEl.textContent = (response && response.error) || 'Could not mark as applied.';
+    confirmMarkAppliedBtn.disabled = false;
+    confirmMarkAppliedBtn.textContent = 'Mark as applied';
+    return;
+  }
+
+  await chrome.storage.local.remove(key);
+  confirmationPromptEl.classList.add('hidden');
+  statusEl.textContent = 'Marked as applied!';
+});
+
+dismissConfirmationBtn.addEventListener('click', async () => {
+  const tab = await getActiveTab();
+  if (tab) {
+    await chrome.storage.local.remove(`lastJobInfo_${tab.id}`);
+  }
+  confirmationPromptEl.classList.add('hidden');
+});
+
+async function rememberJobBasics(tab) {
+  const basics = await sendMessage({ type: 'GET_JOB_BASICS' });
+  if (!basics.ok) return;
+  await chrome.storage.local.set({
+    [`lastJobInfo_${tab.id}`]: { title: basics.title, company: basics.company, url: tab.url },
+  });
+}
+
+async function checkApplicationConfirmation(tab) {
+  if (!tab) return;
+  const response = await sendMessage({ type: 'CHECK_APPLICATION_CONFIRMATION' });
+  if (!response.ok || !response.isConfirmationPage) return;
+
+  const key = `lastJobInfo_${tab.id}`;
+  const stored = await chrome.storage.local.get(key);
+  const jobInfo = stored[key];
+  if (!jobInfo || !jobInfo.title) return;
+
+  confirmationJobInfoEl.textContent = jobInfo.company ? ` to ${jobInfo.title} at ${jobInfo.company}` : ` to ${jobInfo.title}`;
+  confirmationPromptEl.classList.remove('hidden');
+}
 
 // Asks the server (not local per-tab storage) whether this URL is already
 // tracked as applied, so a fresh tab on a posting you already marked from
@@ -292,14 +354,21 @@ async function init() {
   if (!loggedIn) return;
 
   const { isJobDescriptionPage } = await sendMessage({ type: 'CHECK_JOB_DESCRIPTION_PAGE' });
-  notJobDescriptionPageEl.classList.toggle('hidden', isJobDescriptionPage);
   optimizerForm.classList.toggle('hidden', !isJobDescriptionPage);
-  if (!isJobDescriptionPage) return;
+
+  if (!isJobDescriptionPage) {
+    const tab = await getActiveTab();
+    await checkApplicationConfirmation(tab);
+    notJobDescriptionPageEl.classList.toggle('hidden', !confirmationPromptEl.classList.contains('hidden'));
+    return;
+  }
+  notJobDescriptionPageEl.classList.add('hidden');
 
   const tab = await getActiveTab();
   await restoreStoredSettings(tab);
   await restoreStoredResult(tab);
   await checkAppliedState(tab);
+  await rememberJobBasics(tab);
 
   const resumesResponse = await sendMessage({ type: 'GET_DOCX_RESUMES' });
   if (!resumesResponse.ok) {

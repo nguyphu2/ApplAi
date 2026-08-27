@@ -141,15 +141,44 @@ async function optimizeResume({ resumeId, targetMatchPercent, onePage, saveAsNew
   return response.json();
 }
 
-async function markApplied({ title, company, url, resumeId }) {
+async function markApplied({ resumeId, override }) {
   const { id_token } = await chrome.storage.local.get('id_token');
   if (!id_token) {
     throw new Error('not logged in');
   }
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab) {
+    throw new Error('no active tab');
+  }
+
+  let title;
+  let company;
+  let url;
+  if (override) {
+    // Called from the "looks like you just applied" confirmation-page
+    // prompt - the current page is a "Thank you for applying" screen, not
+    // the job posting, so scraping it would get the wrong (or no) title
+    // and company. Use the info remembered from the original posting.
+    ({ title, company, url } = override);
+  } else {
+    // Scrapes the page itself (title + JobPosting structured data) rather
+    // than trusting values passed in from the popup, so company is actually
+    // captured instead of always going in blank.
+    const scraped = await scrapeJobDescription(tab.id);
+    title = scraped.pageTitle || tab.title || 'Untitled posting';
+    company = scraped.company || '';
+    url = tab.url;
+  }
+
   const response = await fetch(`${API_BASE}/applications`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${id_token}` },
-    body: JSON.stringify({ title, company, url, resume_id: resumeId || null }),
+    body: JSON.stringify({
+      title: title || 'Untitled posting',
+      company: company || '',
+      url,
+      resume_id: resumeId || null,
+    }),
   });
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) {
@@ -235,6 +264,86 @@ async function checkJobDescriptionPage() {
   }
 }
 
+// Runs inside the page (via executeScript) to decide if this looks like an
+// application-confirmation page ("Thank you for applying" etc), so the
+// popup can offer to mark the ORIGINAL job applied even though this page
+// itself isn't the posting - self-contained, no closures, same reason as
+// detectJobDescriptionPage above.
+function detectApplicationConfirmationPage() {
+  const CONFIRMATION_TERMS = [
+    'thank you for applying', 'thank you for your application', 'thanks for applying',
+    'application received', 'application submitted', 'application complete',
+    "we've received your application", 'we have received your application',
+    'your application has been submitted', 'successfully applied',
+  ];
+  const bodyText = document.body ? document.body.textContent.toLowerCase() : '';
+  return CONFIRMATION_TERMS.some((term) => bodyText.includes(term));
+}
+
+async function checkApplicationConfirmationPage() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab) return false;
+  try {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: detectApplicationConfirmationPage,
+    });
+    return !!result;
+  } catch (err) {
+    return false;
+  }
+}
+
+// Runs inside the page - a cheap title/company grab (no full description
+// text extraction) so the popup can remember what job this tab was on,
+// in case the user later lands on a confirmation page in the same tab
+// where scraping the page itself would get the wrong (or no) title/company.
+function extractJobBasics() {
+  function guessPageTitle() {
+    const raw = document.title.trim();
+    const separators = [' | ', ' - ', ' — '];
+    for (const sep of separators) {
+      const idx = raw.lastIndexOf(sep);
+      if (idx > 0) return raw.slice(0, idx).trim();
+    }
+    return raw;
+  }
+  function guessCompany() {
+    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const script of scripts) {
+      let data;
+      try {
+        data = JSON.parse(script.textContent);
+      } catch {
+        continue;
+      }
+      const candidates = Array.isArray(data) ? data : [data];
+      for (const item of candidates) {
+        const type = item && item['@type'];
+        const isJobPosting = type === 'JobPosting' || (Array.isArray(type) && type.includes('JobPosting'));
+        const name = item && item.hiringOrganization && item.hiringOrganization.name;
+        if (isJobPosting && name) return String(name).trim();
+      }
+    }
+    return '';
+  }
+  return { title: guessPageTitle(), company: guessCompany() };
+}
+
+async function getJobBasics() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab) return { title: '', company: '' };
+  try {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: extractJobBasics,
+    });
+    return result || { title: '', company: '' };
+  } catch (err) {
+    return { title: '', company: '' };
+  }
+}
+
 async function scrapeJobDescription(tabId) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -251,7 +360,7 @@ async function scrapeJobDescription(tabId) {
         settled = true;
         clearTimeout(timeoutId);
         chrome.runtime.onMessage.removeListener(listener);
-        resolve({ text: message.text, pageTitle: message.pageTitle });
+        resolve({ text: message.text, pageTitle: message.pageTitle, company: message.company });
       }
     };
     chrome.runtime.onMessage.addListener(listener);
@@ -267,7 +376,7 @@ async function scrapeJobDescription(tabId) {
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  chrome.storage.local.remove([`optimizeResult_${tabId}`, `optimizeSettings_${tabId}`]);
+  chrome.storage.local.remove([`optimizeResult_${tabId}`, `optimizeSettings_${tabId}`, `lastJobInfo_${tabId}`]);
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -310,6 +419,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'CHECK_APPLIED') {
     checkApplied(message.payload.url)
       .then((application) => sendResponse({ ok: true, application }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (message.type === 'CHECK_APPLICATION_CONFIRMATION') {
+    checkApplicationConfirmationPage()
+      .then((isConfirmationPage) => sendResponse({ ok: true, isConfirmationPage }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (message.type === 'GET_JOB_BASICS') {
+    getJobBasics()
+      .then(({ title, company }) => sendResponse({ ok: true, title, company }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }

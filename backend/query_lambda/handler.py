@@ -10,6 +10,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 
 import boto3
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
@@ -19,9 +20,12 @@ from textract import extract_text_from_pdf
 load_dotenv('.env')
 BUCKET_NAME = os.getenv('BUCKET_NAME')
 BEDROCK_KB_ID = os.getenv('BEDROCK_KB_ID')
+UNINTERESTED_TABLE_NAME = os.getenv('UNINTERESTED_TABLE_NAME')
 
 s3_client = boto3.client('s3')
 agent_runtime = boto3.client('bedrock-agent-runtime')
+dynamodb = boto3.resource('dynamodb')
+uninterested_table = dynamodb.Table(UNINTERESTED_TABLE_NAME) if UNINTERESTED_TABLE_NAME else None
 
 MAX_RESULTS = 50  # frontend reveals these 10 at a time via "Load more"
 BROWSE_SCAN_LIMIT = 300  # cap how many candidates we'll fetch in browse mode
@@ -107,6 +111,40 @@ def autocomplete_locations(query):
     return matches[:MAX_LOCATION_SUGGESTIONS]
 
 
+def optional_user_id(event):
+    """This route has no authorizer - guests search too - so a logged-in
+    caller identifies themselves by sending their id_token as a normal
+    Authorization header, which this route reads but never requires. This
+    is a best-effort, UNVERIFIED decode of the JWT's claims (no signature
+    check) purely to personalize which jobs get excluded from search
+    results - job listings aren't sensitive, so a spoofed sub only ever
+    mispersonalizes someone's own results, never exposes or corrupts
+    anything. Returns None on any missing/malformed token."""
+    headers = {k.lower(): v for k, v in (event.get('headers') or {}).items()}
+    auth_header = headers.get('authorization', '')
+    if not auth_header.lower().startswith('bearer '):
+        return None
+    token = auth_header[7:]
+    try:
+        payload_segment = token.split('.')[1]
+        padded = payload_segment + '=' * (-len(payload_segment) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(padded))
+        return claims.get('sub')
+    except Exception:
+        return None
+
+
+def fetch_uninterested_job_ids(user_id):
+    if not user_id or uninterested_table is None:
+        return set()
+    try:
+        response = uninterested_table.query(KeyConditionExpression=Key('user_id').eq(user_id))
+        return {item['job_id'] for item in response.get('Items', [])}
+    except ClientError as e:
+        print(f'could not fetch uninterested jobs: {e}')
+        return set()
+
+
 def handler(event, context):
     body = json.loads(event.get('body') or '{}')
 
@@ -159,17 +197,19 @@ def handler(event, context):
             if job_id not in seen_job_ids:
                 seen_job_ids.append(job_id)
 
-        jobs = []
-        for job_id in seen_job_ids:
-            try:
-                jobs.append(fetch_job(job_id))
-            except s3_client.exceptions.NoSuchKey:
-                print(f'skipping missing job {job_id}')
+        # Was a sequential loop - up to 100 individual S3 round-trips added
+        # several seconds whenever a title/location filter was set. Fetch
+        # concurrently instead, same helper the browse path already uses.
+        jobs = fetch_jobs_concurrently(seen_job_ids)
 
         if needs_post_filter:
             jobs = [job for job in jobs if job_matches_filters(job, filters)][:MAX_RESULTS]
     else:
         jobs, scores_by_job_id = browse_jobs(filters)
+
+    excluded_job_ids = fetch_uninterested_job_ids(optional_user_id(event))
+    if excluded_job_ids:
+        jobs = [job for job in jobs if job['job_id'] not in excluded_job_ids]
 
     matches = []
     for job in jobs:
