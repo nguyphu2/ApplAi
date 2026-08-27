@@ -311,7 +311,10 @@ async function checkApplicationConfirmation(tab) {
     // confirmation sentence itself ("Your application for X at Y..."),
     // using this page's own URL since the original posting URL is unknown.
     if (response.extractedTitle) {
-      jobInfo = { title: response.extractedTitle, company: response.extractedCompany || '', url: tab.url };
+      // urlIsFallback: true tells background.js this URL is just the
+      // confirmation page itself, not a real posting URL - worth trying to
+      // resolve against the catalog by title/company before saving it.
+      jobInfo = { title: response.extractedTitle, company: response.extractedCompany || '', url: tab.url, urlIsFallback: true };
       await chrome.storage.local.set({ [key]: jobInfo });
     } else {
       return;

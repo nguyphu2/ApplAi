@@ -141,6 +141,40 @@ async function optimizeResume({ resumeId, targetMatchPercent, onePage, saveAsNew
   return response.json();
 }
 
+// When the only URL we have is a fallback (the confirmation page itself,
+// not the real posting - see urlIsFallback in popup.js), try to resolve
+// the real catalog listing by title/company before saving a URL nobody
+// else will ever match: neither the website's search-result checkmark
+// nor "you've already applied to this page" on a later revisit can work
+// against a one-time confirmation-page URL. Reuses /match's title filter,
+// which also matches company name, so this needs no new endpoint. Only
+// substitutes on an unambiguous single match - never guesses.
+async function resolveCatalogListing(title, company) {
+  if (!company) return null;
+  try {
+    const response = await fetch(`${API_BASE}/match`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filters: { title: company } }),
+    });
+    if (!response.ok) return null;
+    const { matches } = await response.json();
+    const titleLower = (title || '').toLowerCase();
+    const companyLower = company.toLowerCase();
+    const candidates = matches.filter((m) => {
+      const companyMatches = m.company && m.company.toLowerCase().includes(companyLower);
+      const titleMatches = !titleLower || (m.title && (m.title.toLowerCase().includes(titleLower) || titleLower.includes(m.title.toLowerCase())));
+      return companyMatches && titleMatches;
+    });
+    if (candidates.length === 1) {
+      return { job_id: candidates[0].job_id, url: candidates[0].listing_url };
+    }
+  } catch (err) {
+    // Best-effort only - fall through to the caller's existing URL.
+  }
+  return null;
+}
+
 async function markApplied({ resumeId, override }) {
   const { id_token } = await chrome.storage.local.get('id_token');
   if (!id_token) {
@@ -154,12 +188,20 @@ async function markApplied({ resumeId, override }) {
   let title;
   let company;
   let url;
+  let jobId = null;
   if (override) {
     // Called from the "looks like you just applied" confirmation-page
     // prompt - the current page is a "Thank you for applying" screen, not
     // the job posting, so scraping it would get the wrong (or no) title
     // and company. Use the info remembered from the original posting.
     ({ title, company, url } = override);
+    if (override.urlIsFallback) {
+      const resolved = await resolveCatalogListing(title, company);
+      if (resolved) {
+        url = resolved.url;
+        jobId = resolved.job_id;
+      }
+    }
   } else {
     // Scrapes the page itself (title + JobPosting structured data) rather
     // than trusting values passed in from the popup, so company is actually
@@ -177,6 +219,7 @@ async function markApplied({ resumeId, override }) {
       title: title || 'Untitled posting',
       company: company || '',
       url,
+      job_id: jobId,
       resume_id: resumeId || null,
     }),
   });
