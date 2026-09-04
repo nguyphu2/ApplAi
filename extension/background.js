@@ -178,6 +178,18 @@ async function resolveCatalogListing(title, company) {
   return null;
 }
 
+// Workday's "My Applications" dashboard gives every listed application the
+// same page URL - there's no per-job link to tell them apart. Its req ID
+// (e.g. "R0000007859") is the one thing Workday itself guarantees is
+// unique per posting, so folding it into the path makes each candidate
+// dedupe (and later be found/unmarked) independently instead of all
+// collapsing onto one shared record.
+function workdayCandidateUrl(tabUrl, reqId) {
+  if (!reqId) return tabUrl;
+  const base = tabUrl.split(/[?#]/)[0].replace(/\/$/, '');
+  return `${base}/${encodeURIComponent(reqId)}`;
+}
+
 async function markApplied({ resumeId, override }) {
   const { id_token } = await chrome.storage.local.get('id_token');
   if (!id_token) {
@@ -198,6 +210,9 @@ async function markApplied({ resumeId, override }) {
     // the job posting, so scraping it would get the wrong (or no) title
     // and company. Use the info remembered from the original posting.
     ({ title, company, url } = override);
+    if (override.reqId) {
+      url = workdayCandidateUrl(url, override.reqId);
+    }
     if (override.urlIsFallback) {
       const resolved = await resolveCatalogListing(title, company);
       if (resolved) {
@@ -267,6 +282,32 @@ async function checkApplied(url) {
   const { applications } = await response.json();
   const normalized = normalizeUrl(url);
   return applications.find((a) => a.url_normalized === normalized) || null;
+}
+
+// One GET /applications covering many URLs at once - used to populate the
+// Workday picker's checkbox states without one round-trip per row.
+async function checkAppliedMulti(urls) {
+  const { id_token } = await chrome.storage.local.get('id_token');
+  if (!id_token) {
+    throw new Error('not logged in');
+  }
+  const response = await fetch(`${API_BASE}/applications`, {
+    headers: { Authorization: `Bearer ${id_token}` },
+  });
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      await chrome.storage.local.remove(['id_token', 'access_token']);
+      throw new Error('your session expired — please log in again');
+    }
+    throw new Error('could not check applied status');
+  }
+  const { applications } = await response.json();
+  const byNormalizedUrl = new Map(applications.map((a) => [a.url_normalized, a]));
+  const result = {};
+  for (const url of urls) {
+    result[url] = byNormalizedUrl.get(normalizeUrl(url)) || null;
+  }
+  return result;
 }
 
 async function deleteApplicationRecord(applicationId) {
@@ -382,12 +423,116 @@ async function checkApplicationConfirmationPage() {
   }
 }
 
+// Runs inside the page - Workday's "My Applications" dashboard
+// (*.wdN.myworkdayjobs.com/.../jobTasks/completed/application) isn't a
+// one-time "thank you" screen with a single sentence to regex-match - it's
+// a persistent table of every in-progress application, so
+// detectApplicationConfirmationPage's title/company extraction never finds
+// anything there even though its term list does match "application
+// submitted" on the page. data-automation-id attributes are the stable
+// selectors Workday's own SPA relies on internally, so they survive the
+// frequent styling/markup churn a text- or class-based selector wouldn't.
+// No company text exists anywhere on the page itself - the tenant name is
+// only available from the hostname (<company>.wd#.myworkdayjobs.com).
+function detectWorkdayApplicationsDashboard() {
+  const rows = Array.from(document.querySelectorAll('[data-automation-id="taskListRow"]'));
+  if (rows.length === 0) return { isWorkdayDashboard: false, candidates: [], company: '' };
+
+  // Column position, not regex on the row's flattened text - Workday
+  // renders each cell with no whitespace between adjacent elements
+  // ("ReportingR0000007859In Progress..."), so a \b-anchored regex for the
+  // req ID never matches (no word boundary exists between the letters and
+  // digits that are glued together). The <td> cells themselves are exactly
+  // [reqId, status, dateSubmitted, actions], confirmed against the live
+  // table - fragile to Workday reordering columns, same risk any
+  // layout-based scraping of a third-party page accepts.
+  const candidates = rows
+    .map((row) => {
+      const titleEl = row.querySelector('[data-automation-id="applicationTitle"]');
+      const cells = row.querySelectorAll('td');
+      return {
+        title: titleEl ? titleEl.textContent.trim() : '',
+        reqId: cells[0] ? cells[0].textContent.trim() : '',
+        status: cells[1] ? cells[1].textContent.trim() : '',
+        dateSubmitted: cells[2] ? cells[2].textContent.trim() : '',
+      };
+    })
+    .filter((c) => c.title);
+
+  const hostMatch = location.host.match(/^([a-z0-9-]+)\.wd\d+\.myworkdayjobs\.com$/i);
+  const company = hostMatch ? hostMatch[1].charAt(0).toUpperCase() + hostMatch[1].slice(1) : '';
+
+  return { isWorkdayDashboard: true, candidates, company };
+}
+
+// Workday's SPA renders the applications table asynchronously after the
+// page shell loads - querying data-automation-id="taskListRow" right after
+// navigation (or a reload) can legitimately find zero rows a moment before
+// they exist, not because there's nothing to show. Confirmed live: the
+// exact same page returned 0 rows, then correctly returned 1 a few seconds
+// later with no other change. A one-shot check treats that as "not a
+// Workday dashboard" and silently shows nothing - retrying briefly covers
+// the render delay without meaningfully slowing down the popup.
+async function checkWorkdayApplicationsDashboard() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab) return { isWorkdayDashboard: false, candidates: [], company: '' };
+  const ATTEMPTS = 5;
+  const DELAY_MS = 400;
+  try {
+    for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: detectWorkdayApplicationsDashboard,
+      });
+      if (result && result.isWorkdayDashboard && result.candidates.length > 0) {
+        return result;
+      }
+      if (attempt < ATTEMPTS - 1) {
+        await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
+      }
+    }
+    return { isWorkdayDashboard: false, candidates: [], company: '' };
+  } catch (err) {
+    return { isWorkdayDashboard: false, candidates: [], company: '' };
+  }
+}
+
 // Runs inside the page - a cheap title/company grab (no full description
 // text extraction) so the popup can remember what job this tab was on,
 // in case the user later lands on a confirmation page in the same tab
 // where scraping the page itself would get the wrong (or no) title/company.
 function extractJobBasics() {
+  // JobPosting structured data, parsed once for both fields - `name` is
+  // the canonical job title and `hiringOrganization.name` the company.
+  // Title used to only ever come from og:title or splitting the raw
+  // <title> on a fixed separator list - a page titled exactly "Intern ,
+  // Artificial Intelligence at L3Harris Technologies" uses none of those
+  // separators, so the whole string (company included) fell through
+  // unsplit. The structured data's own title field is clean regardless.
+  function jobPostingFromStructuredData() {
+    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const script of scripts) {
+      let data;
+      try {
+        data = JSON.parse(script.textContent);
+      } catch {
+        continue;
+      }
+      const candidates = Array.isArray(data) ? data : [data];
+      for (const item of candidates) {
+        const type = item && item['@type'];
+        const isJobPosting = type === 'JobPosting' || (Array.isArray(type) && type.includes('JobPosting'));
+        if (isJobPosting) return item;
+      }
+    }
+    return null;
+  }
+
+  const jobPosting = jobPostingFromStructuredData();
+
   function guessPageTitle() {
+    if (jobPosting && jobPosting.name) return String(jobPosting.name).trim();
+
     // og:title is curated for clean display and present on far more sites
     // than JobPosting schema (e.g. SmartRecruiters listing pages have none).
     const ogTitle = document.querySelector('meta[property="og:title"]');
@@ -402,22 +547,8 @@ function extractJobBasics() {
     return raw;
   }
   function guessCompany() {
-    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
-    for (const script of scripts) {
-      let data;
-      try {
-        data = JSON.parse(script.textContent);
-      } catch {
-        continue;
-      }
-      const candidates = Array.isArray(data) ? data : [data];
-      for (const item of candidates) {
-        const type = item && item['@type'];
-        const isJobPosting = type === 'JobPosting' || (Array.isArray(type) && type.includes('JobPosting'));
-        const name = item && item.hiringOrganization && item.hiringOrganization.name;
-        if (isJobPosting && name) return String(name).trim();
-      }
-    }
+    const name = jobPosting && jobPosting.hiringOrganization && jobPosting.hiringOrganization.name;
+    if (name) return String(name).trim();
     const ogSiteName = document.querySelector('meta[property="og:site_name"]');
     if (ogSiteName && ogSiteName.content) return ogSiteName.content.trim();
     return '';
@@ -517,6 +648,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }
+  if (message.type === 'CHECK_APPLIED_MULTI') {
+    checkAppliedMulti(message.payload.urls)
+      .then((applications) => sendResponse({ ok: true, applications }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
   if (message.type === 'DELETE_APPLICATION') {
     deleteApplicationRecord(message.payload.applicationId)
       .then(() => sendResponse({ ok: true }))
@@ -528,6 +665,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(({ isConfirmation, title, company }) => sendResponse({
         ok: true, isConfirmationPage: isConfirmation, extractedTitle: title, extractedCompany: company,
       }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (message.type === 'CHECK_WORKDAY_DASHBOARD') {
+    checkWorkdayApplicationsDashboard()
+      .then(({ isWorkdayDashboard, candidates, company }) => sendResponse({ ok: true, isWorkdayDashboard, candidates, company }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }

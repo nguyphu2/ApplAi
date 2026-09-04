@@ -1,4 +1,4 @@
-import { getIdToken } from './auth.js';
+import { getIdToken, clearTokens } from './auth.js';
 
 const API_BASE = 'https://q3xyo18vh7.execute-api.us-east-1.amazonaws.com';
 
@@ -6,6 +6,15 @@ async function request(path, options) {
   const response = await fetch(`${API_BASE}${path}`, options);
   const body = await response.json();
   if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      // The token was valid when the page loaded but has since expired or
+      // been revoked - clear it and tell app.js so it can flip the UI back
+      // to logged-out immediately, instead of leaving stale "Logout" state
+      // showing until the user notices and logs out manually.
+      clearTokens();
+      window.dispatchEvent(new Event('session-expired'));
+      throw new Error('your session expired — please log in again');
+    }
     throw new Error(body.error || 'request failed');
   }
   return body;

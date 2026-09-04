@@ -16,6 +16,11 @@ const confirmationResumeLabel = document.getElementById('confirmation-resume-lab
 const confirmationResumeSelect = document.getElementById('confirmation-resume-select');
 const confirmMarkAppliedBtn = document.getElementById('confirm-mark-applied-btn');
 const dismissConfirmationBtn = document.getElementById('dismiss-confirmation-btn');
+const workdayPickerEl = document.getElementById('confirmation-picker');
+const pickerResumeLabel = document.getElementById('picker-resume-label');
+const pickerResumeSelect = document.getElementById('picker-resume-select');
+const workdayPickerListEl = document.getElementById('confirmation-picker-list');
+const dismissPickerBtn = document.getElementById('dismiss-picker-btn');
 const resultEl = document.getElementById('result');
 const statusEl = document.getElementById('status');
 const progressEl = document.getElementById('optimize-progress');
@@ -276,7 +281,15 @@ confirmMarkAppliedBtn.addEventListener('click', async () => {
     return;
   }
 
-  await chrome.storage.local.remove(key);
+  // Keep (don't remove) lastJobInfo, marked as handled - reopening the
+  // popup on this same tab later must recognize "already marked applied"
+  // without re-prompting. Deliberately scoped to this one tab rather than
+  // a cross-tab title+company lookup: companies commonly post the same-ish
+  // title to several distinct real locations (see frontend/app.js's
+  // findApplicationForJob for the same reasoning), so fuzzy-matching across
+  // tabs would risk claiming "already applied" for a posting never actually
+  // applied to.
+  await chrome.storage.local.set({ [key]: { ...jobInfo, appliedApplicationId: response.application.application_id } });
   confirmationPromptEl.classList.add('hidden');
   statusEl.textContent = 'Marked as applied!';
 });
@@ -289,6 +302,79 @@ dismissConfirmationBtn.addEventListener('click', async () => {
   confirmationPromptEl.classList.add('hidden');
 });
 
+dismissPickerBtn.addEventListener('click', () => {
+  workdayPickerEl.classList.add('hidden');
+});
+
+// Same reqId-folding background.js's markApplied uses (workdayCandidateUrl)
+// - needed here too so each row's checkbox can be checked against its own
+// distinct URL rather than the one shared page URL every candidate has.
+function workdayCandidateUrl(tabUrl, reqId) {
+  if (!reqId) return tabUrl;
+  const base = tabUrl.split(/[?#]/)[0].replace(/\/$/, '');
+  return `${base}/${encodeURIComponent(reqId)}`;
+}
+
+// A checklist, not a one-shot picker - Workday dashboards commonly list
+// several applications at once, any of which might need marking (or
+// un-marking, if one was checked by mistake), so every row toggles
+// independently rather than the popup closing after a single choice.
+async function showWorkdayPicker(tab, candidates, company) {
+  workdayPickerListEl.innerHTML = '';
+  await populateResumeSelect(pickerResumeLabel, pickerResumeSelect);
+  const urls = candidates.map((c) => workdayCandidateUrl(tab.url, c.reqId));
+  const checkResponse = await sendMessage({ type: 'CHECK_APPLIED_MULTI', payload: { urls } });
+  const appliedByUrl = (checkResponse.ok && checkResponse.applications) || {};
+
+  candidates.forEach((candidate, i) => {
+    const url = urls[i];
+    let applicationId = appliedByUrl[url] ? appliedByUrl[url].application_id : null;
+
+    const row = document.createElement('label');
+    row.className = 'picker-row';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = !!applicationId;
+
+    const text = document.createElement('span');
+    text.textContent = candidate.dateSubmitted ? `${candidate.title} (${candidate.dateSubmitted})` : candidate.title;
+
+    row.append(checkbox, text);
+    workdayPickerListEl.appendChild(row);
+
+    checkbox.addEventListener('change', async () => {
+      checkbox.disabled = true;
+      if (checkbox.checked) {
+        const jobInfo = { title: candidate.title, company, url: tab.url, urlIsFallback: true, reqId: candidate.reqId };
+        const response = await sendMessage({
+          type: 'MARK_APPLIED',
+          payload: { resumeId: pickerResumeSelect.value || null, override: jobInfo },
+        });
+        if (!response || !response.ok) {
+          statusEl.textContent = (response && response.error) || 'Could not mark as applied.';
+          checkbox.checked = false;
+        } else {
+          applicationId = response.application.application_id;
+          statusEl.textContent = 'Marked as applied!';
+        }
+      } else if (applicationId) {
+        const response = await sendMessage({ type: 'DELETE_APPLICATION', payload: { applicationId } });
+        if (!response || !response.ok) {
+          statusEl.textContent = (response && response.error) || 'Could not remove.';
+          checkbox.checked = true;
+        } else {
+          applicationId = null;
+          statusEl.textContent = '';
+        }
+      }
+      checkbox.disabled = false;
+    });
+  });
+
+  workdayPickerEl.classList.remove('hidden');
+}
+
 async function rememberJobBasics(tab) {
   const basics = await sendMessage({ type: 'GET_JOB_BASICS' });
   if (!basics.ok) return;
@@ -297,8 +383,34 @@ async function rememberJobBasics(tab) {
   });
 }
 
+function isWorkdayHost(url) {
+  try {
+    return /\.myworkdayjobs\.com$/i.test(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
 async function checkApplicationConfirmation(tab) {
   if (!tab) return;
+
+  if (isWorkdayHost(tab.url)) {
+    // Checked independently of (and before) the generic confirmation-
+    // sentence detector below, gated on hostname rather than always trying
+    // it - CHECK_WORKDAY_DASHBOARD retries for a couple seconds to cover
+    // the SPA's async render, and every other ATS would pay that cost for
+    // nothing. A Workday dashboard is a legitimate place to mark/unmark
+    // applications any time you're on it, not only right after finishing
+    // one - it has no "you just submitted" banner on a plain visit to your
+    // account's general applications/home page, which the sentence
+    // detector requires and would otherwise always miss here.
+    const workday = await sendMessage({ type: 'CHECK_WORKDAY_DASHBOARD' });
+    if (workday.ok && workday.isWorkdayDashboard && workday.candidates.length > 0) {
+      await showWorkdayPicker(tab, workday.candidates, workday.company);
+      return;
+    }
+  }
+
   const response = await sendMessage({ type: 'CHECK_APPLICATION_CONFIRMATION' });
   if (!response.ok || !response.isConfirmationPage) return;
 
@@ -306,21 +418,23 @@ async function checkApplicationConfirmation(tab) {
   const stored = await chrome.storage.local.get(key);
   let jobInfo = stored[key];
 
+  if (jobInfo && jobInfo.appliedApplicationId) {
+    statusEl.textContent = '✓ Already marked as applied.';
+    confirmationPromptEl.classList.add('hidden');
+    return;
+  }
+
   if (!jobInfo || !jobInfo.title) {
     // Nothing was remembered for this tab (popup was never opened on the
     // original posting, or the apply flow moved to a different tab) - fall
     // back to whatever background.js could pull straight out of the
-    // confirmation sentence itself ("Your application for X at Y..."),
-    // using this page's own URL since the original posting URL is unknown.
-    if (response.extractedTitle) {
-      // urlIsFallback: true tells background.js this URL is just the
-      // confirmation page itself, not a real posting URL - worth trying to
-      // resolve against the catalog by title/company before saving it.
-      jobInfo = { title: response.extractedTitle, company: response.extractedCompany || '', url: tab.url, urlIsFallback: true };
-      await chrome.storage.local.set({ [key]: jobInfo });
-    } else {
-      return;
-    }
+    // confirmation sentence itself ("Your application for X at Y...").
+    if (!response.extractedTitle) return;
+    // urlIsFallback: true tells background.js this URL is just the
+    // confirmation page itself, not a real posting URL - worth trying to
+    // resolve against the catalog by title/company before saving it.
+    jobInfo = { title: response.extractedTitle, company: response.extractedCompany || '', url: tab.url, urlIsFallback: true };
+    await chrome.storage.local.set({ [key]: jobInfo });
   }
 
   confirmationJobInfoEl.textContent = jobInfo.company ? ` to ${jobInfo.title} at ${jobInfo.company}` : ` to ${jobInfo.title}`;
@@ -328,12 +442,12 @@ async function checkApplicationConfirmation(tab) {
   confirmationPromptEl.classList.remove('hidden');
 }
 
-async function populateConfirmationResumeSelect() {
+async function populateResumeSelect(labelEl, selectEl) {
   const resumesResponse = await sendMessage({ type: 'GET_DOCX_RESUMES' });
-  confirmationResumeSelect.innerHTML = '';
+  selectEl.innerHTML = '';
   if (!resumesResponse.ok || resumesResponse.resumes.length === 0) {
-    confirmationResumeLabel.classList.add('hidden');
-    confirmationResumeSelect.classList.add('hidden');
+    labelEl.classList.add('hidden');
+    selectEl.classList.add('hidden');
     return;
   }
 
@@ -342,18 +456,22 @@ async function populateConfirmationResumeSelect() {
     const option = document.createElement('option');
     option.value = r.id;
     option.textContent = r.filename;
-    confirmationResumeSelect.appendChild(option);
+    selectEl.appendChild(option);
   }
   // Default to the single active resume when unambiguous; otherwise leave
   // the browser's default (first in the list) - the dropdown is visible
   // either way, so a so-so default just means one extra glance, not a
   // silent wrong attachment.
   if (activeResumeIds && activeResumeIds.length === 1 && resumes.some((r) => r.id === activeResumeIds[0])) {
-    confirmationResumeSelect.value = activeResumeIds[0];
+    selectEl.value = activeResumeIds[0];
   }
 
-  confirmationResumeLabel.classList.remove('hidden');
-  confirmationResumeSelect.classList.remove('hidden');
+  labelEl.classList.remove('hidden');
+  selectEl.classList.remove('hidden');
+}
+
+function populateConfirmationResumeSelect() {
+  return populateResumeSelect(confirmationResumeLabel, confirmationResumeSelect);
 }
 
 // Asks the server (not local per-tab storage) whether this URL is already
@@ -430,7 +548,8 @@ async function init() {
   if (!isJobDescriptionPage) {
     const tab = await getActiveTab();
     await checkApplicationConfirmation(tab);
-    notJobDescriptionPageEl.classList.toggle('hidden', !confirmationPromptEl.classList.contains('hidden'));
+    const showingConfirmation = !confirmationPromptEl.classList.contains('hidden') || !workdayPickerEl.classList.contains('hidden');
+    notJobDescriptionPageEl.classList.toggle('hidden', showingConfirmation);
     return;
   }
   notJobDescriptionPageEl.classList.add('hidden');

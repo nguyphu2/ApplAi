@@ -143,7 +143,7 @@ main {
 }
 
 main.wide {
-  max-width: 980px;
+  max-width: 1320px;
 }
 
 .sidebar-nav button {
@@ -816,12 +816,11 @@ input[type="file"]::-webkit-file-upload-button {
 }
 
 .funnel-ribbon {
-  fill: #bfdbfe;
+  /* fill comes from the per-ribbon <linearGradient> set inline in app.js,
+     not from here - a flat fill on this class would win over it. */
+  fill-opacity: 0.72;
   pointer-events: none;
-}
-
-.funnel-ribbon-rejected {
-  fill: #f2b6b6;
+  transition: fill-opacity 0.15s ease;
 }
 
 .funnel-ribbon-label {
@@ -834,6 +833,7 @@ input[type="file"]::-webkit-file-upload-button {
 
 .funnel-node {
   outline: none;
+  cursor: pointer;
 }
 
 .funnel-node rect {
@@ -842,22 +842,28 @@ input[type="file"]::-webkit-file-upload-button {
 
 .funnel-node:hover rect,
 .funnel-node:focus-visible rect {
-  opacity: 0.85;
+  opacity: 0.8;
 }
 
 .funnel-node.active rect {
   stroke: var(--error);
-  stroke-width: 3;
+  stroke-width: 2;
 }
 
+/* Label now sits above its (slim, rounded) bar rather than centered
+   inside it - plain text on the page background, no longer needing the
+   white-fill-plus-dark-stroke treatment that kept it legible over an
+   arbitrary block color. */
 .funnel-node-label {
   font-family: inherit;
-  font-size: 11px;
-  fill: #ffffff;
-  paint-order: stroke;
-  stroke: rgba(10, 19, 48, 0.6);
-  stroke-width: 3px;
+  font-size: 10px;
+  fill: var(--text-muted);
   pointer-events: none;
+}
+
+.funnel-node.active .funnel-node-label {
+  fill: var(--error);
+  font-weight: bold;
 }
 
 #applications-search {
@@ -871,6 +877,7 @@ input[type="file"]::-webkit-file-upload-button {
 
 #applications-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.6rem;
 }
@@ -880,6 +887,37 @@ input[type="file"]::-webkit-file-upload-button {
   text-align: left;
   padding: 0.6rem 0.5rem;
   border-bottom: 2px solid var(--panel-bg-alt);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Fixed layout needs explicit column shares - without this, long job
+   titles/company names force the table itself wider than its container,
+   which is what made #applications-table-wrap's overflow-x kick in even
+   after widening main.wide. Long text now ellipsizes instead (full text
+   still available via each cell's title attribute, set in app.js). */
+#applications-table col.col-company { width: 14%; }
+#applications-table col.col-title { width: 28%; }
+#applications-table col.col-status { width: 16%; }
+#applications-table col.col-resume { width: 16%; }
+#applications-table col.col-date { width: 12%; }
+#applications-table col.col-remove { width: 14%; }
+
+/* Status select and Remove button are fixed-size controls, not text that
+   benefits from truncation - clipping them (the general td rule above)
+   cut the Remove button off instead of just shortening it. overflow:visible
+   is a safety net for narrow windows; the widened column and this button's
+   own compact sizing below should make it unnecessary in practice. */
+#applications-table td.col-status,
+#applications-table td.col-remove {
+  overflow: visible;
+  white-space: normal;
+}
+
+#applications-table .application-remove-btn {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.52rem;
 }
 
 #applications-table th.sortable {

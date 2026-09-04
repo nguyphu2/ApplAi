@@ -260,6 +260,16 @@ function applicationsByUrl() {
   return map;
 }
 
+// Exact URL match only - AbbVie (and plenty of other companies) post the
+// same-ish title to many distinct locations as separate real postings, so
+// a title+company fuzzy match would falsely show "Applied" on a posting
+// you never actually applied to. See background.js's markApplied /
+// resolveCatalogListing for why the stored URL is sometimes a resolved
+// catalog URL rather than the raw page URL you were marking from.
+function findApplicationForJob(job, appliedByUrlMap) {
+  return (appliedByUrlMap || applicationsByUrl()).get(normalizeUrl(job.listing_url || '')) || null;
+}
+
 function renderMatches() {
   const allMatches = sortMatches(filterByRelevance(lastMatches), sortBySelect.value);
 
@@ -269,7 +279,16 @@ function renderMatches() {
   }
 
   const matches = allMatches.slice(0, visibleCount);
-  const appliedByUrl = applicationsByUrl();
+  // Was rebuilding the full applications Map from scratch inside
+  // findApplicationForJob on every call - O(matches x applications) instead
+  // of O(matches + applications) once the applications list has any real
+  // size. Build it once here and pass it through.
+  const appliedByUrlMap = applicationsByUrl();
+  const appliedByJobId = new Map();
+  for (const job of matches) {
+    const existing = findApplicationForJob(job, appliedByUrlMap);
+    if (existing) appliedByJobId.set(job.job_id, existing);
+  }
 
   resultsEl.innerHTML = matches.map((job) => `
     <div class="job-card" data-job-id="${job.job_id}" data-listing-url="${job.listing_url}">
@@ -289,7 +308,7 @@ function renderMatches() {
         <button class="secondary analyze-btn">${isLoggedIn() ? 'Job match analysis' : '🔒 Job match analysis'}</button>
         <div class="applied-uninterested-row">
           ${job.listing_url ? `
-          <button class="job-applied-toggle${appliedByUrl.has(normalizeUrl(job.listing_url)) ? ' applied' : ''}">${isLoggedIn() ? (appliedByUrl.has(normalizeUrl(job.listing_url)) ? '✓ Applied' : 'Mark applied') : '🔒 Mark applied'}</button>
+          <button class="job-applied-toggle${appliedByJobId.has(job.job_id) ? ' applied' : ''}">${isLoggedIn() ? (appliedByJobId.has(job.job_id) ? '✓ Applied' : 'Mark applied') : '🔒 Mark applied'}</button>
           ` : '<button class="job-applied-toggle" disabled title="No listing URL available">Mark applied</button>'}
           <button class="secondary uninterested-btn">${isLoggedIn() ? 'Uninterested' : '🔒 Uninterested'}</button>
         </div>
@@ -326,9 +345,7 @@ function renderMatches() {
         return;
       }
 
-      const settings = await getSettings();
-      profileSettings = settings;
-      profileSettingsLoaded = true;
+      const settings = await loadProfileSettings();
       if (settings.active_resume_ids.length === 0) {
         showComicBubble(btn, '🔒 Upload a resume first.');
         return;
@@ -369,8 +386,7 @@ function renderMatches() {
         return;
       }
 
-      const normalized = normalizeUrl(listingUrl);
-      const existing = applicationsByUrl().get(normalized);
+      const existing = findApplicationForJob(job);
 
       btn.disabled = true;
       try {
@@ -436,13 +452,18 @@ async function buildProfileText() {
   if (!isLoggedIn()) {
     return '';
   }
-  const settings = await getSettings();
-  profileSettings = settings;
-  profileSettingsLoaded = true;
-  const activeResumeText = settings.resumes
-    .filter((r) => settings.active_resume_ids.includes(r.id))
+  // Was an unconditional getSettings() call on every single search - each
+  // resume's full extracted text comes back in that payload, so re-fetching
+  // it per search added a full round trip for data that had almost always
+  // already been loaded this session and hadn't changed. Same
+  // profileSettingsLoaded cache activateProfileTab/activateApplicationsTab
+  // already trust; every settings mutation in this file updates
+  // profileSettings in place, so the cache never goes stale mid-session.
+  await loadProfileSettings();
+  const activeResumeText = profileSettings.resumes
+    .filter((r) => profileSettings.active_resume_ids.includes(r.id))
     .map((r) => r.text);
-  return [settings.skills_text, ...activeResumeText].filter(Boolean).join('\n');
+  return [profileSettings.skills_text, ...activeResumeText].filter(Boolean).join('\n');
 }
 
 matchForm.addEventListener('submit', async (event) => {
@@ -465,15 +486,15 @@ matchForm.addEventListener('submit', async (event) => {
 
   try {
     const skillsText = await buildProfileText();
-    const result = await search({ skills_text: skillsText, filters });
+    // Independent requests - applications only need to finish before
+    // renderMatches reads them for the checkmark, not before search
+    // starts. Was awaited sequentially after search(), adding its full
+    // round trip on top of search latency for no reason.
+    const applicationsPromise = isLoggedIn()
+      ? loadApplications().catch((err) => console.error('failed to load applications for checkmark matching:', err))
+      : Promise.resolve();
+    const [result] = await Promise.all([search({ skills_text: skillsText, filters }), applicationsPromise]);
     lastMatches = result.matches;
-    if (isLoggedIn()) {
-      try {
-        await loadApplications();
-      } catch (err) {
-        console.error('failed to load applications for checkmark matching:', err);
-      }
-    }
     renderMatches();
   } catch (err) {
     renderError(resultsEl, err.message);
@@ -496,10 +517,14 @@ matchForm.addEventListener('submit', async (event) => {
 const FUNNEL_STAGES = ['Applied', '1st Stage', '2nd Stage', '3rd Stage', 'Offer', 'Offer Declined'];
 const FUNNEL_SHADES = ['#0a1f44', '#16336e', '#1e50c4', '#3b82f6', '#60a5fa', '#93c5fd'];
 const REJECTED_COLOR = '#a4262c';
-const REJECTED_RIBBON_COLOR = '#f2b6b6';
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const FUNNEL_NODE_WIDTH = 92;
-const FUNNEL_RIBBON_WIDTH = 70;
+// Slim rounded bars, not wide flat blocks - a 92px node next to a 70px
+// ribbon made the blocks the dominant visual shape instead of the flow
+// between them. Labels move above the bar (see appendFunnelNode) since
+// they no longer fit centered inside one this narrow.
+const FUNNEL_NODE_WIDTH = 18;
+const FUNNEL_NODE_RADIUS = 9; // half the node width - full stadium/pill ends
+const FUNNEL_RIBBON_WIDTH = 120;
 const FUNNEL_MIN_BLOCK_HEIGHT = 24;
 
 let applicationsStatusFilter = null;
@@ -531,13 +556,39 @@ function toggleApplicationsStatusFilter(status) {
 
 // A flowing ribbon between two vertical edges that may sit at different x
 // AND y positions (the main chain ribbons keep y1===y2; the Rejected
-// branch uses different y's to visually drop to its own row).
-function sankeyRibbonPath(x1, y1, x2, y2, width) {
+// branch uses different y's to visually drop to its own row), tapering
+// from width1 at the start to width2 at the end - width1 !== width2
+// whenever some applicants stayed at the source stage instead of
+// advancing, so the ribbon narrows to show that drop-off instead of
+// stepping down abruptly right at the node edge.
+function sankeyRibbonPath(x1, y1, x2, y2, width1, width2) {
   const midX = (x1 + x2) / 2;
-  const y1b = y1 + width;
-  const y2b = y2 + width;
+  const y1b = y1 + width1;
+  const y2b = y2 + width2;
   return `M ${x1} ${y1} C ${midX} ${y1} ${midX} ${y2} ${x2} ${y2} `
     + `L ${x2} ${y2b} C ${midX} ${y2b} ${midX} ${y1b} ${x1} ${y1b} Z`;
+}
+
+// A ribbon fading from its source stage's color into its destination
+// stage's color, instead of one flat tint for every flow - ties the
+// ribbon visually to the two bars it connects rather than reading as a
+// generic pipe running behind them.
+function appendRibbonGradient(defs, id, x1, x2, colorA, colorB) {
+  const gradient = document.createElementNS(SVG_NS, 'linearGradient');
+  gradient.setAttribute('id', id);
+  gradient.setAttribute('gradientUnits', 'userSpaceOnUse');
+  gradient.setAttribute('x1', x1);
+  gradient.setAttribute('x2', x2);
+  gradient.setAttribute('y1', '0');
+  gradient.setAttribute('y2', '0');
+  const stop1 = document.createElementNS(SVG_NS, 'stop');
+  stop1.setAttribute('offset', '0%');
+  stop1.setAttribute('stop-color', colorA);
+  const stop2 = document.createElementNS(SVG_NS, 'stop');
+  stop2.setAttribute('offset', '100%');
+  stop2.setAttribute('stop-color', colorB);
+  gradient.append(stop1, stop2);
+  defs.appendChild(gradient);
 }
 
 function appendFunnelRibbonLabel(svg, x, y, count) {
@@ -563,6 +614,7 @@ function appendFunnelNode(svg, stage, exactCount, x, y, height, color, tooltipTe
   rect.setAttribute('y', y);
   rect.setAttribute('width', FUNNEL_NODE_WIDTH);
   rect.setAttribute('height', height);
+  rect.setAttribute('rx', FUNNEL_NODE_RADIUS);
   rect.setAttribute('fill', color);
   g.appendChild(rect);
 
@@ -570,12 +622,14 @@ function appendFunnelNode(svg, stage, exactCount, x, y, height, color, tooltipTe
   title.textContent = tooltipText;
   g.appendChild(title);
 
+  // Above the bar, not centered inside it - a slim 18px bar has no room
+  // for "Offer Declined" or any other label text.
   const label = document.createElementNS(SVG_NS, 'text');
   label.setAttribute('x', x + FUNNEL_NODE_WIDTH / 2);
-  label.setAttribute('y', y + height / 2 + 4);
+  label.setAttribute('y', y - 8);
   label.setAttribute('text-anchor', 'middle');
   label.classList.add('funnel-node-label');
-  label.textContent = stage;
+  label.textContent = `${stage} (${exactCount})`;
   g.appendChild(label);
 
   function activate() {
@@ -603,7 +657,9 @@ function renderApplicationsFunnel() {
   // width silently clipped "Offer Declined" off the right edge once the
   // chain grew from 5 to 6 stages.
   const svgWidth = FUNNEL_STAGES.length * FUNNEL_NODE_WIDTH + (FUNNEL_STAGES.length - 1) * FUNNEL_RIBBON_WIDTH + 20;
-  const topY = 16;
+  // Labels now sit above each bar (see appendFunnelNode) instead of
+  // centered inside it, so topY needs enough headroom to not clip them.
+  const topY = 28;
   const mainRowMaxHeight = 190;
   const branchGap = 34;
   const scale = mainRowMaxHeight / maxCount;
@@ -621,25 +677,38 @@ function renderApplicationsFunnel() {
   svg.setAttribute('aria-label', 'Application pipeline flow by status');
   svg.classList.add('funnel-svg');
 
+  const defs = document.createElementNS(SVG_NS, 'defs');
+  svg.appendChild(defs);
+
   // Applied's bar shows the FULL total (everyone who ever applied), not
   // just cumulative[0], so the Rejected branch has a visible slice of it
   // to split off from. Every later stage shows cumulative[i] as before.
   const nodeHeights = FUNNEL_STAGES.map((stage, i) => (i === 0 ? heightFor(total) : heightFor(cumulative[i])));
 
-  // Ribbons first, so node rectangles paint on top at each end.
+  // Ribbons first, so node rectangles paint on top at each end. Tapers
+  // from nodeHeights[i] (everyone who reached this stage) to
+  // nodeHeights[i+1] (everyone who continued past it) - anyone who stayed
+  // at stage i without advancing shows up as the ribbon narrowing right
+  // where it leaves that node, instead of the node and ribbon disagreeing
+  // in height and creating a hard step at the junction.
   for (let i = 0; i < FUNNEL_STAGES.length - 1; i++) {
     const flowCount = cumulative[i + 1];
     if (flowCount <= 0) continue;
-    const height = heightFor(flowCount);
+    const width1 = nodeHeights[i];
+    const width2 = nodeHeights[i + 1];
     const x1 = xFor(i) + FUNNEL_NODE_WIDTH;
     const x2 = xFor(i + 1);
 
+    const gradId = `funnel-grad-${i}`;
+    appendRibbonGradient(defs, gradId, x1, x2, FUNNEL_SHADES[i], FUNNEL_SHADES[i + 1]);
+
     const path = document.createElementNS(SVG_NS, 'path');
-    path.setAttribute('d', sankeyRibbonPath(x1, topY, x2, topY, height));
+    path.setAttribute('d', sankeyRibbonPath(x1, topY, x2, topY, width1, width2));
+    path.setAttribute('fill', `url(#${gradId})`);
     path.classList.add('funnel-ribbon');
     svg.appendChild(path);
 
-    appendFunnelRibbonLabel(svg, (x1 + x2) / 2, topY + height / 2 + 4, flowCount);
+    appendFunnelRibbonLabel(svg, (x1 + x2) / 2, topY + Math.max(width1, width2) / 2 + 4, flowCount);
   }
 
   // Rejected branch - splits off the bottom slice of the Applied node
@@ -650,8 +719,11 @@ function renderApplicationsFunnel() {
     const branchY1 = topY + nodeHeights[0] - rejectedHeight;
     const branchX2 = xFor(1);
 
+    appendRibbonGradient(defs, 'funnel-grad-rejected', branchX1, branchX2, FUNNEL_SHADES[0], REJECTED_COLOR);
+
     const path = document.createElementNS(SVG_NS, 'path');
-    path.setAttribute('d', sankeyRibbonPath(branchX1, branchY1, branchX2, branchY, rejectedHeight));
+    path.setAttribute('d', sankeyRibbonPath(branchX1, branchY1, branchX2, branchY, rejectedHeight, rejectedHeight));
+    path.setAttribute('fill', 'url(#funnel-grad-rejected)');
     path.classList.add('funnel-ribbon', 'funnel-ribbon-rejected');
     svg.appendChild(path);
 
@@ -741,16 +813,19 @@ function renderApplicationsTable() {
 
     const companyCell = document.createElement('td');
     companyCell.textContent = a.company || '—';
+    if (a.company) companyCell.title = a.company;
 
     const titleCell = document.createElement('td');
     const link = document.createElement('a');
     link.href = a.url;
     link.textContent = a.title;
+    link.title = a.title;
     link.target = '_blank';
     link.rel = 'noopener';
     titleCell.appendChild(link);
 
     const statusCell = document.createElement('td');
+    statusCell.className = 'col-status';
     const select = document.createElement('select');
     select.className = 'application-status-select';
     STATUS_LIST.forEach((s) => {
@@ -764,11 +839,13 @@ function renderApplicationsTable() {
 
     const resumeCell = document.createElement('td');
     resumeCell.textContent = resume ? resume.filename : '—';
+    if (resume) resumeCell.title = resume.filename;
 
     const dateCell = document.createElement('td');
     dateCell.textContent = a.applied_at ? new Date(a.applied_at).toLocaleDateString() : '—';
 
     const removeCell = document.createElement('td');
+    removeCell.className = 'col-remove';
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.className = 'secondary delete-btn application-remove-btn';
@@ -1110,6 +1187,41 @@ function showTab(name) {
 }
 
 let profileSettingsLoaded = false;
+let profileSettingsPromise = null;
+
+// Single in-flight request shared by every caller (init's preload,
+// activateProfileTab, activateApplicationsTab, buildProfileText) so a
+// fetch already kicked off at login isn't duplicated by whichever of them
+// runs next - they all just await the same promise.
+function loadProfileSettings() {
+  if (!profileSettingsLoaded && !profileSettingsPromise) {
+    profileSettingsPromise = getSettings()
+      .then((settings) => {
+        profileSettings = settings;
+        profileSettingsLoaded = true;
+        return settings;
+      })
+      .catch((err) => {
+        profileSettingsPromise = null;
+        throw err;
+      });
+  }
+  return profileSettingsPromise || Promise.resolve(profileSettings);
+}
+
+// Unlike profile settings, the applications list is expected to change
+// often (new applications, status updates), so activateApplicationsTab
+// always wants a fresh fetch on every visit - this only dedupes the one
+// preload fired at login against whichever tab activation happens to run
+// first. Consumed once: the reference is cleared the moment anything reads
+// it, so later tab visits fall through to a normal loadApplications() call.
+let applicationsPreloadPromise = null;
+function preloadApplications() {
+  if (!applicationsPreloadPromise) {
+    applicationsPreloadPromise = loadApplications();
+  }
+  return applicationsPreloadPromise;
+}
 
 async function activateSearchTab() {
   showTab('search');
@@ -1122,11 +1234,22 @@ async function activateApplicationsTab() {
   if (!isLoggedIn()) return;
   await activateApplicationsSubtab('tracked');
   try {
-    if (!profileSettingsLoaded) {
-      profileSettings = await getSettings();
-      profileSettingsLoaded = true;
+    // getSettings (for resume filenames) and listApplications are
+    // independent - only the render step after needs both, so fetch them
+    // together instead of one after the other. loadApplications renders
+    // internally using whatever profileSettings has *right now*, so on a
+    // cold first load (profileSettingsLoaded still false) it can render
+    // before settings arrives - re-render once settings lands to pick up
+    // the resume filenames it needed. A no-op extra render on every later
+    // visit, since settingsPromise then resolves immediately.
+    const wasLoaded = profileSettingsLoaded;
+    const applicationsPromise = applicationsPreloadPromise || loadApplications();
+    applicationsPreloadPromise = null;
+    await Promise.all([loadProfileSettings(), applicationsPromise]);
+    if (!wasLoaded) {
+      renderApplicationsFunnel();
+      renderApplicationsTable();
     }
-    await loadApplications();
   } catch (err) {
     console.error('failed to load applications:', err);
     applicationsEmptyEl.textContent = "Couldn't load your applications — try again.";
@@ -1144,8 +1267,7 @@ async function activateProfileTab() {
   profileLoggedOut.classList.add('hidden');
   profileLoggedIn.classList.remove('hidden');
   try {
-    profileSettings = await getSettings();
-    profileSettingsLoaded = true;
+    await loadProfileSettings();
     profileSkillsText.value = profileSettings.skills_text;
     setSkillsMode(profileSettings.skills_text ? 'view' : 'edit');
     renderResumeList();
@@ -1179,8 +1301,22 @@ function activateTabFromHash() {
 
 window.addEventListener('hashchange', activateTabFromHash);
 
+// Fired by api.js the moment any request comes back 401/403 - the token
+// looked valid when the page loaded but the session has since died
+// server-side. Without this, the Login/Logout button and whichever tab is
+// showing stay stuck in their logged-in state until the user manually logs
+// out and notices nothing happened.
+window.addEventListener('session-expired', () => {
+  updateAuthUI();
+  activateTabFromHash();
+});
+
 (async function init() {
   await handleCallback();
   updateAuthUI();
+  if (isLoggedIn()) {
+    loadProfileSettings();
+    preloadApplications();
+  }
   await activateTabFromHash();
 })();

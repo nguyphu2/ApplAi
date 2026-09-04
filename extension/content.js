@@ -76,7 +76,39 @@
     return best ? best.textContent.trim() : document.body.textContent.trim();
   }
 
+  // Most ATS/job-board pages embed schema.org JobPosting structured data for
+  // Google for Jobs indexing - parsed once here for both title and company.
+  // `name` is the canonical, clean job title; `hiringOrganization.name` the
+  // most reliable company source when present. A page titled exactly
+  // "Intern , Artificial Intelligence at L3Harris Technologies" defeats the
+  // separator-based document.title fallback below (none of [' | ', ' - ',
+  // ' — '] appear in it), keeping the company name wrongly baked into the
+  // scraped title - the structured data's own title field sidesteps that
+  // entirely when present.
+  function jobPostingFromStructuredData() {
+    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const script of scripts) {
+      let data;
+      try {
+        data = JSON.parse(script.textContent);
+      } catch {
+        continue;
+      }
+      const candidates = Array.isArray(data) ? data : [data];
+      for (const item of candidates) {
+        const type = item && item['@type'];
+        const isJobPosting = type === 'JobPosting' || (Array.isArray(type) && type.includes('JobPosting'));
+        if (isJobPosting) return item;
+      }
+    }
+    return null;
+  }
+
+  const jobPosting = jobPostingFromStructuredData();
+
   function guessPageTitle() {
+    if (jobPosting && jobPosting.name) return String(jobPosting.name).trim();
+
     // og:title is curated specifically for clean display (social-share
     // previews) and is present on far more sites than JobPosting schema -
     // e.g. SmartRecruiters' own listing pages have no structured data at
@@ -94,32 +126,13 @@
     return raw;
   }
 
-  // Most ATS/job-board pages embed schema.org JobPosting structured data
-  // for Google for Jobs indexing - hiringOrganization.name is the most
-  // reliable company source when present. Falls back to the Open Graph
-  // site-name meta tag (used for social-share previews, present on far
-  // more pages than JobPosting schema - verified live on a real
-  // SmartRecruiters listing page with zero JSON-LD tags but a correct
-  // og:site_name).
+  // Falls back to the Open Graph site-name meta tag (used for social-share
+  // previews, present on far more pages than JobPosting schema - verified
+  // live on a real SmartRecruiters listing page with zero JSON-LD tags but
+  // a correct og:site_name).
   function guessCompanyFromStructuredData() {
-    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
-    for (const script of scripts) {
-      let data;
-      try {
-        data = JSON.parse(script.textContent);
-      } catch {
-        continue;
-      }
-      const candidates = Array.isArray(data) ? data : [data];
-      for (const item of candidates) {
-        const type = item && item['@type'];
-        const isJobPosting = type === 'JobPosting' || (Array.isArray(type) && type.includes('JobPosting'));
-        const name = item && item.hiringOrganization && item.hiringOrganization.name;
-        if (isJobPosting && name) {
-          return String(name).trim();
-        }
-      }
-    }
+    const name = jobPosting && jobPosting.hiringOrganization && jobPosting.hiringOrganization.name;
+    if (name) return String(name).trim();
     const ogSiteName = document.querySelector('meta[property="og:site_name"]');
     if (ogSiteName && ogSiteName.content) return ogSiteName.content.trim();
     return '';

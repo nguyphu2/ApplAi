@@ -41,9 +41,13 @@ export async function login() {
   window.location.href = `${COGNITO_DOMAIN}/login?${params.toString()}`;
 }
 
-export function logout() {
+export function clearTokens() {
   localStorage.removeItem('id_token');
   localStorage.removeItem('access_token');
+}
+
+export function logout() {
+  clearTokens();
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
     logout_uri: REDIRECT_URI,

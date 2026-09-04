@@ -81,3 +81,26 @@ def upload_locations_manifest(locations):
         ContentType='application/json',
     )
 
+
+JOBS_MANIFEST_KEY = 'manifest/jobs.json'
+
+
+def load_jobs_manifest():
+    try:
+        obj = s3_client.get_object(Bucket=s3_bucket, Key=JOBS_MANIFEST_KEY)
+        return json.loads(obj['Body'].read())
+    except s3_client.exceptions.NoSuchKey:
+        return {}
+
+
+def upload_jobs_manifest(manifest):
+    """One JSON object keyed by job_id, mirroring every job's S3 body - lets
+    query_lambda filter/serve listings from a single GetObject instead of
+    individually fetching hundreds of jobs/<id>.json files per search."""
+    s3_client.put_object(
+        Bucket=s3_bucket,
+        Key=JOBS_MANIFEST_KEY,
+        Body=json.dumps(manifest).encode('utf-8'),
+        ContentType='application/json',
+    )
+

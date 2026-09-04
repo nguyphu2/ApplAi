@@ -17,7 +17,7 @@ import os
 import requests
 from dotenv import load_dotenv
 from normalize import normalize_job
-from S3 import upload, upload_locations_manifest, list_existing_job_ids
+from S3 import upload, upload_locations_manifest, list_existing_job_ids, load_jobs_manifest, upload_jobs_manifest
 import boto3
 
 
@@ -26,7 +26,7 @@ BEDROCK_KB_ID = os.getenv('BEDROCK_KB_ID')
 BEDROCK_DATA_SOURCE_ID = os.getenv('BEDROCK_DATA_SOURCE_ID')
 
 client = boto3.client('bedrock-agent')
-
+    
 LISTINGS_URL = (
     'https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships'
     '/dev/.github/scripts/listings.json'
@@ -46,6 +46,16 @@ def handler(event, context):
 
     for j in new_jobs:
         upload(j)
+
+    # Merge today's active feed into the persisted manifest (query_lambda's
+    # single-GetObject search index) rather than rebuilding it - keeps
+    # postings that dropped out of today's feed but are still stored under
+    # jobs/ and still searchable, matching query_lambda's existing lenient
+    # behavior of never filtering on "still active".
+    jobs_manifest = load_jobs_manifest()
+    for j in normalized_jobs:
+        jobs_manifest[j['job_id']] = j
+    upload_jobs_manifest(jobs_manifest)
 
     locations = {loc for j in normalized_jobs for loc in j['location'].split('; ') if loc}
     upload_locations_manifest(locations)

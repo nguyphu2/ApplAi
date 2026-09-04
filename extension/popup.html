@@ -29,7 +29,9 @@
     body {
       width: 340px;
       margin: 0;
-      padding: 1.1rem;
+      /* Extra bottom clearance so scrollable content never ends up hidden
+         behind the now-fixed Log out button (see button.danger below). */
+      padding: 1.1rem 1.1rem 4rem;
       font-family: "Press Start 2P", monospace;
       font-size: 0.65rem;
       line-height: 1.6;
@@ -138,8 +140,18 @@
       background: var(--bg);
       color: var(--red);
       border-color: var(--red);
-      position: sticky;
-      bottom: 0;
+      /* Was position: sticky, which only holds within normal document
+         flow - as content above it grew/shrank (results panel,
+         confirmation prompt, Workday picker), the button visually shifted
+         along with it. Fixed pins it to the popup's own viewport instead,
+         so it stays put regardless of what's rendered above it. */
+      position: fixed;
+      left: 1.1rem;
+      right: 1.1rem;
+      bottom: 1.1rem;
+      width: auto;
+      margin-top: 0;
+      z-index: 10;
     }
 
     button.danger:hover {
@@ -148,6 +160,27 @@
 
     .hidden {
       display: none;
+    }
+
+    #confirmation-picker-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      margin: 0.8rem 0;
+    }
+
+    .picker-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      font-size: 0.58rem;
+      line-height: 1.5;
+      cursor: pointer;
+    }
+
+    .picker-row input[type="checkbox"] {
+      margin-top: 0.15rem;
+      flex-shrink: 0;
     }
 
     .pixel-progress {
@@ -290,6 +323,14 @@
     <select id="confirmation-resume-select" class="hidden"></select>
     <button id="confirm-mark-applied-btn" class="success">Mark as applied</button>
     <button id="dismiss-confirmation-btn" class="secondary">Dismiss</button>
+  </div>
+
+  <div id="confirmation-picker" class="hidden">
+    <p>Which application(s) did you submit?</p>
+    <label for="picker-resume-select" class="hidden" id="picker-resume-label">Resume</label>
+    <select id="picker-resume-select" class="hidden"></select>
+    <div id="confirmation-picker-list"></div>
+    <button id="dismiss-picker-btn" class="secondary">Done</button>
   </div>
 
   <div id="result" class="hidden"></div>

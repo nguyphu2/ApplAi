@@ -5,6 +5,7 @@ auth token required). Does not call Claude — see analysis_lambda for the
 on-demand per-job explanation step.
 """
 import base64
+import hashlib
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -24,8 +25,7 @@ BEDROCK_KB_ID = os.getenv('BEDROCK_KB_ID')
 UNINTERESTED_TABLE_NAME = os.getenv('UNINTERESTED_TABLE_NAME')
 
 MAX_RESULTS = 50  # frontend reveals these 10 at a time via "Load more"
-BROWSE_SCAN_LIMIT = 300  # cap how many candidates we'll fetch in browse mode
-BROWSE_FETCH_WORKERS = 20
+BROWSE_FETCH_WORKERS = 20  # concurrency for per-job embedding calls (see score_jobs_against_profile)
 
 # Default boto3 connection pool (10) is smaller than BROWSE_FETCH_WORKERS,
 # so concurrent S3 fetches were constantly exhausting and recreating
@@ -33,69 +33,107 @@ BROWSE_FETCH_WORKERS = 20
 # logs) - observed live after the concurrency fix below, costing real time.
 s3_client = boto3.client('s3', config=Config(max_pool_connections=BROWSE_FETCH_WORKERS * 2))
 agent_runtime = boto3.client('bedrock-agent-runtime')
+bedrock_runtime = boto3.client('bedrock-runtime', config=Config(max_pool_connections=BROWSE_FETCH_WORKERS * 2))
 dynamodb = boto3.resource('dynamodb')
 uninterested_table = dynamodb.Table(UNINTERESTED_TABLE_NAME) if UNINTERESTED_TABLE_NAME else None
-SEMANTIC_SCAN_LIMIT = 100  # max allowed by Bedrock retrieve(); used when
-                            # title/location need client-side post-filtering
+
+EMBED_MODEL_ID = 'amazon.titan-embed-text-v2:0'  # same model the KB itself uses
+EMBED_CACHE_PREFIX = 'embed-cache'  # S3-backed, so it survives cold starts
 
 
 def job_id_from_uri(uri):
     return uri.rsplit('/', 1)[-1].removesuffix('.json')
 
 
-def fetch_job(job_id):
-    obj = s3_client.get_object(Bucket=BUCKET_NAME, Key=f'jobs/{job_id}.json')
-    return json.loads(obj['Body'].read())
+def embed_text(text):
+    response = bedrock_runtime.invoke_model(
+        modelId=EMBED_MODEL_ID,
+        body=json.dumps({'inputText': text}),
+        contentType='application/json',
+        accept='application/json',
+    )
+    return json.loads(response['body'].read())['embedding']
 
 
-def list_job_ids_by_recency():
-    """Sort by S3 LastModified (a close proxy for ingested_at) using only
-    the list response, so we don't need to fetch every job body just to
-    know the fetch order."""
-    entries = []
-    paginator = s3_client.get_paginator('list_objects_v2')
-    for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix='jobs/'):
-        for obj in page.get('Contents', []):
-            key = obj['Key']
-            if key.endswith('.json') and not key.endswith('.metadata.json'):
-                entries.append((obj['LastModified'], job_id_from_uri(key)))
-    entries.sort(key=lambda e: e[0], reverse=True)
-    return [job_id for _, job_id in entries]
-
-
-def fetch_jobs_concurrently(job_ids):
-    jobs = []
-    with ThreadPoolExecutor(max_workers=BROWSE_FETCH_WORKERS) as pool:
-        for job in pool.map(_fetch_job_or_none, job_ids):
-            if job is not None:
-                jobs.append(job)
-    return jobs
-
-
-def _fetch_job_or_none(job_id):
+def get_cached_embedding(cache_key, text):
+    """S3-backed cache keyed by content hash (profile text) or job_id (job
+    postings are effectively immutable once ingested) - repeat searches for
+    the same resume, and repeat sightings of the same job across different
+    searchers, skip the Titan call entirely."""
+    s3_key = f'{EMBED_CACHE_PREFIX}/{cache_key}.json'
     try:
-        return fetch_job(job_id)
+        obj = s3_client.get_object(Bucket=BUCKET_NAME, Key=s3_key)
+        return json.loads(obj['Body'].read())['embedding']
     except s3_client.exceptions.NoSuchKey:
-        return None
+        embedding = embed_text(text)
+        s3_client.put_object(
+            Bucket=BUCKET_NAME,
+            Key=s3_key,
+            Body=json.dumps({'embedding': embedding}).encode('utf-8'),
+            ContentType='application/json',
+        )
+        return embedding
+
+
+def cosine_similarity(a, b):
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = sum(x * x for x in a) ** 0.5
+    norm_b = sum(y * y for y in b) ** 0.5
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return max(0.0, min(1.0, dot / (norm_a * norm_b)))
+
+
+def job_embedding_text(job):
+    parts = [job.get('title') or '', job.get('company') or '', job.get('location') or '', job.get('description') or '']
+    return '\n'.join(p for p in parts if p)[:20000]
+
+
+def score_jobs_against_profile(jobs, profile_text):
+    """Scores every job in `jobs` against the resume, independent of
+    whatever the Bedrock KB's semantic retrieve() would have ranked - used
+    for the text-filter search path, where inclusion is already decided by
+    substring match and every included job needs a score for the frontend
+    to show it (see job_matches_filters/browse_jobs)."""
+    profile_hash = hashlib.sha256(profile_text.encode('utf-8')).hexdigest()
+    profile_embedding = get_cached_embedding(f'profile/{profile_hash}', profile_text)
+
+    def score_one(job):
+        job_embedding = get_cached_embedding(f'job/{job["job_id"]}', job_embedding_text(job))
+        return job['job_id'], cosine_similarity(profile_embedding, job_embedding)
+
+    scores = {}
+    with ThreadPoolExecutor(max_workers=BROWSE_FETCH_WORKERS) as pool:
+        for job_id, score in pool.map(score_one, jobs):
+            scores[job_id] = score
+    return scores
+
+
+JOBS_MANIFEST_KEY = 'manifest/jobs.json'
+_manifest_cache = None  # populated at most once per warm Lambda execution env
+
+
+def load_jobs_manifest():
+    """One JSON object keyed by job_id, kept current by ingestion_lambda on
+    every nightly run - a single GetObject standing in for what used to be
+    up to hundreds of individual jobs/<id>.json fetches per search. Cached
+    per warm container since it only changes once a day."""
+    global _manifest_cache
+    if _manifest_cache is not None:
+        return _manifest_cache
+    try:
+        obj = s3_client.get_object(Bucket=BUCKET_NAME, Key=JOBS_MANIFEST_KEY)
+        _manifest_cache = json.loads(obj['Body'].read())
+    except s3_client.exceptions.NoSuchKey:
+        _manifest_cache = {}
+    return _manifest_cache
 
 
 def browse_jobs(filters):
     """No profile text was given, so there's nothing to semantically search
-    against. List jobs directly from S3 (cheap), fetch candidate bodies
-    concurrently in recency order, and stop once we have enough matches
-    or hit the scan cap, so this stays fast even with a large bucket."""
-    matches = []
-    job_ids = list_job_ids_by_recency()[:BROWSE_SCAN_LIMIT]
-
-    batch_size = BROWSE_FETCH_WORKERS
-    for i in range(0, len(job_ids), batch_size):
-        batch = job_ids[i:i + batch_size]
-        for job in fetch_jobs_concurrently(batch):
-            if job_matches_filters(job, filters):
-                matches.append(job)
-        if len(matches) >= MAX_RESULTS:
-            break
-
+    against. Filter the manifest directly in memory instead of listing and
+    fetching job bodies from S3."""
+    matches = [job for job in load_jobs_manifest().values() if job_matches_filters(job, filters)]
     matches.sort(key=lambda j: j.get('ingested_at') or '', reverse=True)
     return matches[:MAX_RESULTS], {}
 
@@ -178,13 +216,29 @@ def handler(event, context):
 
     profile_text = '\n'.join(t for t in [resume_text, skills_text] if t).strip()
 
-    scores_by_job_id = {}
-    if profile_text:
-        needs_post_filter = bool(filters.get('title') or filters.get('location'))
-        num_results = SEMANTIC_SCAN_LIMIT if needs_post_filter else MAX_RESULTS
+    # title/location are substring queries, e.g. "abb" for AbbVie - an exact
+    # user intent that semantic vector search can silently drop (a job can
+    # rank outside the top N results the KB's retrieve() returns for a given
+    # resume, even though its title/company literally contains the query).
+    # So when either is set, substring match is authoritative for which jobs
+    # are included; the resume (if any) only reorders that set by relevance,
+    # it never removes a textually-matching job from it.
+    has_text_filter = bool(filters.get('title') or filters.get('location'))
 
+    scores_by_job_id = {}
+    if has_text_filter:
+        jobs, _ = browse_jobs(filters)
+        if profile_text and jobs:
+            # Score every text-matched job directly (embed + cosine) instead
+            # of asking the KB's retrieve() to rank them - retrieve() only
+            # scores whatever it decided to semantically retrieve, which is
+            # exactly the gap that made match_score come back null for jobs
+            # substring-matched here but outside its top N.
+            scores_by_job_id = score_jobs_against_profile(jobs, profile_text)
+            jobs.sort(key=lambda j: scores_by_job_id.get(j['job_id'], -1), reverse=True)
+    elif profile_text:
         metadata_filter = build_metadata_filter(filters)
-        retrieval_configuration = {'vectorSearchConfiguration': {'numberOfResults': num_results}}
+        retrieval_configuration = {'vectorSearchConfiguration': {'numberOfResults': MAX_RESULTS}}
         if metadata_filter:
             retrieval_configuration['vectorSearchConfiguration']['filter'] = metadata_filter
 
@@ -194,6 +248,7 @@ def handler(event, context):
             retrievalConfiguration=retrieval_configuration,
         )
 
+        manifest = load_jobs_manifest()
         seen_job_ids = []
         for result in response['retrievalResults']:
             job_id = job_id_from_uri(result['location']['s3Location']['uri'])
@@ -202,13 +257,7 @@ def handler(event, context):
             if job_id not in seen_job_ids:
                 seen_job_ids.append(job_id)
 
-        # Was a sequential loop - up to 100 individual S3 round-trips added
-        # several seconds whenever a title/location filter was set. Fetch
-        # concurrently instead, same helper the browse path already uses.
-        jobs = fetch_jobs_concurrently(seen_job_ids)
-
-        if needs_post_filter:
-            jobs = [job for job in jobs if job_matches_filters(job, filters)][:MAX_RESULTS]
+        jobs = [manifest[job_id] for job_id in seen_job_ids if job_id in manifest]
     else:
         jobs, scores_by_job_id = browse_jobs(filters)
 
