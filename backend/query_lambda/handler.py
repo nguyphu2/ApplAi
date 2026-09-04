@@ -228,15 +228,16 @@ def handler(event, context):
     scores_by_job_id = {}
     if has_text_filter:
         jobs, _ = browse_jobs(filters)
-        if profile_text and jobs:
-            # Score every text-matched job directly (embed + cosine) instead
-            # of asking the KB's retrieve() to rank them - retrieve() only
-            # scores whatever it decided to semantically retrieve, which is
-            # exactly the gap that made match_score come back null for jobs
-            # substring-matched here but outside its top N.
-            scores_by_job_id = score_jobs_against_profile(jobs, profile_text)
-            jobs.sort(key=lambda j: scores_by_job_id.get(j['job_id'], -1), reverse=True)
     elif profile_text:
+        # retrieve() picks WHICH jobs are relevant enough to show - the KB's
+        # own semantic ranking is trustworthy for that. Its raw `score`
+        # field is not used for match_score below, though: comparing it
+        # directly against score_jobs_against_profile's plain cosine
+        # similarity for the same job/profile pair showed retrieve()'s score
+        # running substantially higher (e.g. 0.68 vs 0.37) - Bedrock applies
+        # some undocumented scaling internally, so mixing the two as if they
+        # were the same unit produced wildly inconsistent-looking percentages
+        # depending on which code path served a given search.
         metadata_filter = build_metadata_filter(filters)
         retrieval_configuration = {'vectorSearchConfiguration': {'numberOfResults': MAX_RESULTS}}
         if metadata_filter:
@@ -252,14 +253,20 @@ def handler(event, context):
         seen_job_ids = []
         for result in response['retrievalResults']:
             job_id = job_id_from_uri(result['location']['s3Location']['uri'])
-            if job_id not in scores_by_job_id:
-                scores_by_job_id[job_id] = result.get('score', 0)
             if job_id not in seen_job_ids:
                 seen_job_ids.append(job_id)
 
         jobs = [manifest[job_id] for job_id in seen_job_ids if job_id in manifest]
     else:
         jobs, scores_by_job_id = browse_jobs(filters)
+
+    # Single source of truth for match_score, regardless of which branch
+    # above picked the candidate jobs - see the comment on the retrieve()
+    # branch for why this can't just be retrieve()'s own score.
+    if profile_text and jobs:
+        scores_by_job_id = score_jobs_against_profile(jobs, profile_text)
+        if has_text_filter:
+            jobs.sort(key=lambda j: scores_by_job_id.get(j['job_id'], -1), reverse=True)
 
     excluded_job_ids = fetch_uninterested_job_ids(optional_user_id(event))
     if excluded_job_ids:
