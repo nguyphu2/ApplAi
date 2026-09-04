@@ -15,6 +15,7 @@ const profileLoggedIn = document.getElementById('profile-logged-in');
 const applicationsLoggedOut = document.getElementById('applications-logged-out');
 const applicationsLoggedIn = document.getElementById('applications-logged-in');
 const applicationsFunnelEl = document.getElementById('applications-funnel');
+const applicationsFunnelFiltersEl = document.getElementById('applications-funnel-filters');
 const applicationsSearchInput = document.getElementById('applications-search');
 const applicationsTableBody = document.getElementById('applications-table-body');
 const applicationsEmptyEl = document.getElementById('applications-empty');
@@ -523,20 +524,18 @@ const FUNNEL_STAGES = ['Applied', '1st Stage', '2nd Stage', '3rd Stage', 'Offer'
 const FUNNEL_NODE_COLOR = '#0a1f44';
 const FUNNEL_RIBBON_COLOR = '#a9cce3';
 const REJECTED_COLOR = '#e2776c';
-const SVG_NS = 'http://www.w3.org/2000/svg';
-// Wide flat blocks, not slim pills - matches the reference's rectangular
-// bars. Square corners (radius 0) instead of stadium ends, also per
-// reference. Labels stay above the bar rather than centered inside it like
-// the reference: our labels include a live count ("Offer Declined (3)")
-// that's longer than the reference's plain stage names, and white label
-// text spilling past a narrow navy bar onto the page's white background
-// would go invisible.
-const FUNNEL_NODE_WIDTH = 70;
-const FUNNEL_NODE_RADIUS = 0;
-const FUNNEL_RIBBON_WIDTH = 120;
-const FUNNEL_MIN_BLOCK_HEIGHT = 24;
+const FUNNEL_ACTIVE_BORDER = '#a4262c';
+// Suffix for the hidden pad node/link each non-terminal stage gets, so its
+// bar height still includes applications sitting at that exact stage with
+// no further movement - ECharts sizes a sankey node purely from its link
+// totals, unlike the old hand-rolled SVG bar which could just be taller
+// than its outgoing ribbon. Terminal "Offer Declined" needs no pad: with
+// no outgoing link at all, its incoming link total already IS everyone
+// still sitting there.
+const FUNNEL_PAD_SUFFIX = '__stuck';
 
 let applicationsStatusFilter = null;
+let funnelChart = null;
 
 function applicationsStatusCounts() {
   const counts = { Applied: applications.length };
@@ -563,166 +562,129 @@ function toggleApplicationsStatusFilter(status) {
   renderApplicationsTable();
 }
 
-// A flowing ribbon between two vertical edges that may sit at different x
-// AND y positions (the main chain ribbons keep y1===y2; the Rejected
-// branch uses different y's to visually drop to its own row), tapering
-// from width1 at the start to width2 at the end - width1 !== width2
-// whenever some applicants stayed at the source stage instead of
-// advancing, so the ribbon narrows to show that drop-off instead of
-// stepping down abruptly right at the node edge.
-function sankeyRibbonPath(x1, y1, x2, y2, width1, width2) {
-  const midX = (x1 + x2) / 2;
-  const y1b = y1 + width1;
-  const y2b = y2 + width2;
-  return `M ${x1} ${y1} C ${midX} ${y1} ${midX} ${y2} ${x2} ${y2} `
-    + `L ${x2} ${y2b} C ${midX} ${y2b} ${midX} ${y1b} ${x1} ${y1b} Z`;
-}
-
-function appendFunnelRibbonLabel(svg, x, y, count) {
-  const label = document.createElementNS(SVG_NS, 'text');
-  label.setAttribute('x', x);
-  label.setAttribute('y', y);
-  label.setAttribute('text-anchor', 'middle');
-  label.classList.add('funnel-ribbon-label');
-  label.textContent = count;
-  svg.appendChild(label);
-}
-
-function appendFunnelNode(svg, stage, exactCount, x, y, height, color, tooltipText) {
-  const g = document.createElementNS(SVG_NS, 'g');
-  g.classList.add('funnel-node');
-  if (applicationsStatusFilter === stage) g.classList.add('active');
-  g.setAttribute('tabindex', '0');
-  g.setAttribute('role', 'button');
-  g.setAttribute('aria-pressed', String(applicationsStatusFilter === stage));
-
-  const rect = document.createElementNS(SVG_NS, 'rect');
-  rect.setAttribute('x', x);
-  rect.setAttribute('y', y);
-  rect.setAttribute('width', FUNNEL_NODE_WIDTH);
-  rect.setAttribute('height', height);
-  rect.setAttribute('rx', FUNNEL_NODE_RADIUS);
-  rect.setAttribute('fill', color);
-  g.appendChild(rect);
-
-  const title = document.createElementNS(SVG_NS, 'title');
-  title.textContent = tooltipText;
-  g.appendChild(title);
-
-  // Above the bar, not centered inside it - a slim 18px bar has no room
-  // for "Offer Declined" or any other label text.
-  const label = document.createElementNS(SVG_NS, 'text');
-  label.setAttribute('x', x + FUNNEL_NODE_WIDTH / 2);
-  label.setAttribute('y', y - 8);
-  label.setAttribute('text-anchor', 'middle');
-  label.classList.add('funnel-node-label');
-  label.textContent = `${stage} (${exactCount})`;
-  g.appendChild(label);
-
-  function activate() {
-    toggleApplicationsStatusFilter(stage);
+// Plain buttons mirroring the chart's click-to-filter, so keyboard users
+// have a way to filter by stage - echarts renders to a <canvas>, so chart
+// segments aren't natively tabbable the way the old hand-drawn SVG
+// <g role="button" tabindex> elements were.
+function renderFunnelFilterButtons(exactCounts) {
+  applicationsFunnelFiltersEl.innerHTML = '';
+  for (const stage of [...FUNNEL_STAGES, 'Rejected']) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'secondary funnel-filter-btn';
+    if (applicationsStatusFilter === stage) btn.classList.add('active');
+    btn.setAttribute('aria-pressed', String(applicationsStatusFilter === stage));
+    btn.textContent = `${stage} (${exactCounts[stage]})`;
+    btn.addEventListener('click', () => toggleApplicationsStatusFilter(stage));
+    applicationsFunnelFiltersEl.appendChild(btn);
   }
-  g.addEventListener('click', activate);
-  g.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      activate();
-    }
-  });
-
-  svg.appendChild(g);
 }
 
 function renderApplicationsFunnel() {
   const exactCounts = applicationsStatusCounts();
   const cumulative = funnelCumulativeCounts(exactCounts);
-  const total = applications.length;
-  const maxCount = Math.max(1, total);
 
-  const columnStep = FUNNEL_NODE_WIDTH + FUNNEL_RIBBON_WIDTH;
-  // Sized to the actual number of stages, not a fixed guess - a fixed
-  // width silently clipped "Offer Declined" off the right edge once the
-  // chain grew from 5 to 6 stages.
-  const svgWidth = FUNNEL_STAGES.length * FUNNEL_NODE_WIDTH + (FUNNEL_STAGES.length - 1) * FUNNEL_RIBBON_WIDTH + 20;
-  // Labels now sit above each bar (see appendFunnelNode) instead of
-  // centered inside it, so topY needs enough headroom to not clip them.
-  const topY = 28;
-  const mainRowMaxHeight = 190;
-  const branchGap = 34;
-  const scale = mainRowMaxHeight / maxCount;
-
-  const xFor = (i) => i * columnStep;
-  const heightFor = (count) => (count > 0 ? Math.max(count * scale, FUNNEL_MIN_BLOCK_HEIGHT) : 0);
-
-  const rejectedHeight = heightFor(exactCounts.Rejected);
-  const branchY = topY + mainRowMaxHeight + branchGap;
-  const svgHeight = exactCounts.Rejected > 0 ? branchY + rejectedHeight + 10 : topY + mainRowMaxHeight + 10;
-
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
-  svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', 'Application pipeline flow by status');
-  svg.classList.add('funnel-svg');
-
-  // Applied's bar shows the FULL total (everyone who ever applied), not
-  // just cumulative[0], so the Rejected branch has a visible slice of it
-  // to split off from. Every later stage shows cumulative[i] as before.
-  const nodeHeights = FUNNEL_STAGES.map((stage, i) => (i === 0 ? heightFor(total) : heightFor(cumulative[i])));
-
-  // Ribbons first, so node rectangles paint on top at each end. Tapers
-  // from nodeHeights[i] (everyone who reached this stage) to
-  // nodeHeights[i+1] (everyone who continued past it) - anyone who stayed
-  // at stage i without advancing shows up as the ribbon narrowing right
-  // where it leaves that node, instead of the node and ribbon disagreeing
-  // in height and creating a hard step at the junction.
-  for (let i = 0; i < FUNNEL_STAGES.length - 1; i++) {
-    const flowCount = cumulative[i + 1];
-    if (flowCount <= 0) continue;
-    const width1 = nodeHeights[i];
-    const width2 = nodeHeights[i + 1];
-    const x1 = xFor(i) + FUNNEL_NODE_WIDTH;
-    const x2 = xFor(i + 1);
-
-    const path = document.createElementNS(SVG_NS, 'path');
-    path.setAttribute('d', sankeyRibbonPath(x1, topY, x2, topY, width1, width2));
-    path.setAttribute('fill', FUNNEL_RIBBON_COLOR);
-    path.classList.add('funnel-ribbon');
-    svg.appendChild(path);
-
-    appendFunnelRibbonLabel(svg, (x1 + x2) / 2, topY + Math.max(width1, width2) / 2 + 4, flowCount);
-  }
-
-  // Rejected branch - splits off the bottom slice of the Applied node
-  // (the honest place to show it, since we don't know which round each
-  // rejection actually happened after) down to its own row.
-  if (exactCounts.Rejected > 0) {
-    const branchX1 = xFor(0) + FUNNEL_NODE_WIDTH;
-    const branchY1 = topY + nodeHeights[0] - rejectedHeight;
-    const branchX2 = xFor(1);
-
-    const path = document.createElementNS(SVG_NS, 'path');
-    path.setAttribute('d', sankeyRibbonPath(branchX1, branchY1, branchX2, branchY, rejectedHeight, rejectedHeight));
-    path.setAttribute('fill', REJECTED_COLOR);
-    path.classList.add('funnel-ribbon', 'funnel-ribbon-rejected');
-    svg.appendChild(path);
-
-    appendFunnelRibbonLabel(svg, (branchX1 + branchX2) / 2, (branchY1 + branchY) / 2 + rejectedHeight / 2 + 4, exactCounts.Rejected);
-
-    appendFunnelNode(
-      svg, 'Rejected', exactCounts.Rejected, xFor(1), branchY, rejectedHeight, REJECTED_COLOR,
-      `Rejected: ${exactCounts.Rejected}`,
-    );
-  }
+  const nodes = [];
+  const links = [];
+  const nodeColor = (stage) => (stage === 'Rejected' ? REJECTED_COLOR : FUNNEL_NODE_COLOR);
+  const addNode = (stage, extra) => {
+    const isActive = applicationsStatusFilter === stage;
+    nodes.push({
+      name: stage,
+      itemStyle: {
+        color: nodeColor(stage),
+        borderColor: isActive ? FUNNEL_ACTIVE_BORDER : 'transparent',
+        borderWidth: isActive ? 3 : 0,
+      },
+      ...extra,
+    });
+  };
 
   FUNNEL_STAGES.forEach((stage, i) => {
-    appendFunnelNode(
-      svg, stage, exactCounts[stage], xFor(i), topY, nodeHeights[i], FUNNEL_NODE_COLOR,
-      `${stage}: ${exactCounts[stage]} currently here (${i === 0 ? total : cumulative[i]} reached this stage or later)`,
-    );
+    // exactCounts.Applied is the grand total (everyone who ever applied),
+    // not a literal "how many are sitting at Applied" count the way every
+    // other entry in exactCounts is - so the node's own total, and the
+    // "stuck here" pad value below, both need this per-stage total instead
+    // of exactCounts[stage] directly.
+    const nodeTotal = i === 0 ? applications.length : cumulative[i];
+    if (nodeTotal <= 0) return;
+    addNode(stage);
+
+    const flowCount = cumulative[i + 1];
+    if (i < FUNNEL_STAGES.length - 1 && flowCount > 0) {
+      links.push({
+        source: stage, target: FUNNEL_STAGES[i + 1], value: flowCount,
+        lineStyle: { color: FUNNEL_RIBBON_COLOR, opacity: 1 },
+      });
+    }
+    // Pad link absorbing everyone sitting exactly at this stage with no
+    // further movement - see FUNNEL_PAD_SUFFIX above. Only non-terminal
+    // stages need it. For "Applied" this also nets out the Rejected
+    // branch's share, since that's added as a separate outgoing link below.
+    if (i < FUNNEL_STAGES.length - 1) {
+      const stuckHere = nodeTotal - flowCount - (i === 0 ? exactCounts.Rejected : 0);
+      if (stuckHere > 0) {
+        const padName = `${stage}${FUNNEL_PAD_SUFFIX}`;
+        nodes.push({ name: padName, label: { show: false }, itemStyle: { color: 'transparent', borderWidth: 0 } });
+        links.push({
+          source: stage, target: padName, value: stuckHere,
+          lineStyle: { color: 'transparent', opacity: 0 },
+        });
+      }
+    }
   });
 
-  applicationsFunnelEl.innerHTML = '';
-  applicationsFunnelEl.appendChild(svg);
+  if (exactCounts.Rejected > 0) {
+    addNode('Rejected', { depth: 1 });
+    links.push({
+      source: 'Applied', target: 'Rejected', value: exactCounts.Rejected,
+      lineStyle: { color: REJECTED_COLOR, opacity: 1 },
+    });
+  }
+
+  renderFunnelFilterButtons(exactCounts);
+
+  const tooltipFor = (stage) => {
+    if (stage === 'Rejected') return `Rejected: ${exactCounts.Rejected}`;
+    const i = FUNNEL_STAGES.indexOf(stage);
+    const reached = i === 0 ? applications.length : cumulative[i];
+    return `${stage}: ${exactCounts[stage]} currently here (${reached} reached this stage or later)`;
+  };
+
+  const option = {
+    tooltip: {
+      trigger: 'item',
+      triggerOn: 'mousemove',
+      formatter: (params) => (params.dataType === 'node' && !params.name.endsWith(FUNNEL_PAD_SUFFIX)
+        ? tooltipFor(params.name) : ''),
+    },
+    series: [{
+      type: 'sankey',
+      data: nodes,
+      links,
+      nodeWidth: 28,
+      nodeGap: 12,
+      emphasis: { focus: 'adjacency' },
+      label: {
+        position: 'top',
+        fontFamily: 'inherit',
+        fontSize: 11,
+        color: '#5b6580',
+        formatter: (params) => `${params.name} (${exactCounts[params.name] ?? ''})`,
+      },
+      lineStyle: { curveness: 0.5 },
+    }],
+  };
+
+  if (!funnelChart) {
+    funnelChart = echarts.init(applicationsFunnelEl, null, { renderer: 'svg' });
+    funnelChart.on('click', (params) => {
+      if (params.dataType !== 'node' || params.name.endsWith(FUNNEL_PAD_SUFFIX)) return;
+      toggleApplicationsStatusFilter(params.name);
+    });
+    window.addEventListener('resize', () => funnelChart.resize());
+  }
+  funnelChart.setOption(option, { notMerge: true });
 }
 
 const APPLICATIONS_PAGE_SIZE = 10;

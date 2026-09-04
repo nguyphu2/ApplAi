@@ -804,65 +804,30 @@ input[type="file"]::-webkit-file-upload-button {
 }
 
 .applications-funnel {
+  width: 100%;
+  max-width: 950px;
+  height: 320px;
+  margin: 0 auto 0.75rem;
+}
+
+/* Plain-button fallback for keyboard users, since the chart itself renders
+   to an SVG/canvas that echarts manages internally - see
+   renderFunnelFilterButtons in app.js. */
+.applications-funnel-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   margin-bottom: 1.5rem;
 }
 
-.funnel-svg {
-  width: 100%;
-  max-width: 950px;
-  height: auto;
-  display: block;
-  margin: 0 auto;
+.funnel-filter-btn {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.6rem;
 }
 
-.funnel-ribbon {
-  /* Flat solid fill (set inline in app.js), no gradient and no outline -
-     matches the flerlagetwins.com reference, where separation between
-     stages comes from flat color contrast rather than a border. */
-  pointer-events: none;
-}
-
-.funnel-ribbon-label {
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: bold;
-  fill: var(--navy);
-  pointer-events: none;
-}
-
-.funnel-node {
-  outline: none;
-  cursor: pointer;
-}
-
-.funnel-node rect {
-  transition: opacity 0.1s ease;
-}
-
-.funnel-node:hover rect,
-.funnel-node:focus-visible rect {
-  opacity: 0.8;
-}
-
-.funnel-node.active rect {
-  stroke: var(--error);
-  stroke-width: 2;
-}
-
-/* Label sits above its bar rather than centered inside it - our stage
-   labels carry a live count ("Offer Declined (3)") that's longer than the
-   reference's plain stage names, so it stays plain text on the page
-   background instead of white text that could overflow onto the page. */
-.funnel-node-label {
-  font-family: inherit;
-  font-size: 10px;
-  fill: var(--text-muted);
-  pointer-events: none;
-}
-
-.funnel-node.active .funnel-node-label {
-  fill: var(--error);
-  font-weight: bold;
+.funnel-filter-btn.active {
+  border-color: var(--error);
+  color: var(--error);
 }
 
 #applications-search {
