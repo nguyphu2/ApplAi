@@ -816,11 +816,10 @@ input[type="file"]::-webkit-file-upload-button {
 }
 
 .funnel-ribbon {
-  /* fill comes from the per-ribbon <linearGradient> set inline in app.js,
-     not from here - a flat fill on this class would win over it. */
-  fill-opacity: 0.72;
+  /* Flat solid fill (set inline in app.js), no gradient and no outline -
+     matches the flerlagetwins.com reference, where separation between
+     stages comes from flat color contrast rather than a border. */
   pointer-events: none;
-  transition: fill-opacity 0.15s ease;
 }
 
 .funnel-ribbon-label {
@@ -850,10 +849,10 @@ input[type="file"]::-webkit-file-upload-button {
   stroke-width: 2;
 }
 
-/* Label now sits above its (slim, rounded) bar rather than centered
-   inside it - plain text on the page background, no longer needing the
-   white-fill-plus-dark-stroke treatment that kept it legible over an
-   arbitrary block color. */
+/* Label sits above its bar rather than centered inside it - our stage
+   labels carry a live count ("Offer Declined (3)") that's longer than the
+   reference's plain stage names, so it stays plain text on the page
+   background instead of white text that could overflow onto the page. */
 .funnel-node-label {
   font-family: inherit;
   font-size: 10px;

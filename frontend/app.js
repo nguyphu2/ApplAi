@@ -515,15 +515,24 @@ matchForm.addEventListener('submit', async (event) => {
 // round, and there's no way to know which one, so instead of fabricating
 // a stage it branches directly off the Applied node as its own flow.
 const FUNNEL_STAGES = ['Applied', '1st Stage', '2nd Stage', '3rd Stage', 'Offer', 'Offer Declined'];
-const FUNNEL_SHADES = ['#0a1f44', '#16336e', '#1e50c4', '#3b82f6', '#60a5fa', '#93c5fd'];
-const REJECTED_COLOR = '#a4262c';
+// Flat two-tone scheme (navy nodes/still-progressing + a single light-blue
+// ribbon color), with a third accent reserved for the one branch that
+// leaves the chain (Rejected) - modeled on the flerlagetwins.com sankey
+// funnel: flat solid fills, no per-stage gradient, so color alone marks
+// "still in the pipeline" vs. "dropped out" instead of a rainbow per stage.
+const FUNNEL_NODE_COLOR = '#0a1f44';
+const FUNNEL_RIBBON_COLOR = '#a9cce3';
+const REJECTED_COLOR = '#e2776c';
 const SVG_NS = 'http://www.w3.org/2000/svg';
-// Slim rounded bars, not wide flat blocks - a 92px node next to a 70px
-// ribbon made the blocks the dominant visual shape instead of the flow
-// between them. Labels move above the bar (see appendFunnelNode) since
-// they no longer fit centered inside one this narrow.
-const FUNNEL_NODE_WIDTH = 18;
-const FUNNEL_NODE_RADIUS = 9; // half the node width - full stadium/pill ends
+// Wide flat blocks, not slim pills - matches the reference's rectangular
+// bars. Square corners (radius 0) instead of stadium ends, also per
+// reference. Labels stay above the bar rather than centered inside it like
+// the reference: our labels include a live count ("Offer Declined (3)")
+// that's longer than the reference's plain stage names, and white label
+// text spilling past a narrow navy bar onto the page's white background
+// would go invisible.
+const FUNNEL_NODE_WIDTH = 70;
+const FUNNEL_NODE_RADIUS = 0;
 const FUNNEL_RIBBON_WIDTH = 120;
 const FUNNEL_MIN_BLOCK_HEIGHT = 24;
 
@@ -567,28 +576,6 @@ function sankeyRibbonPath(x1, y1, x2, y2, width1, width2) {
   const y2b = y2 + width2;
   return `M ${x1} ${y1} C ${midX} ${y1} ${midX} ${y2} ${x2} ${y2} `
     + `L ${x2} ${y2b} C ${midX} ${y2b} ${midX} ${y1b} ${x1} ${y1b} Z`;
-}
-
-// A ribbon fading from its source stage's color into its destination
-// stage's color, instead of one flat tint for every flow - ties the
-// ribbon visually to the two bars it connects rather than reading as a
-// generic pipe running behind them.
-function appendRibbonGradient(defs, id, x1, x2, colorA, colorB) {
-  const gradient = document.createElementNS(SVG_NS, 'linearGradient');
-  gradient.setAttribute('id', id);
-  gradient.setAttribute('gradientUnits', 'userSpaceOnUse');
-  gradient.setAttribute('x1', x1);
-  gradient.setAttribute('x2', x2);
-  gradient.setAttribute('y1', '0');
-  gradient.setAttribute('y2', '0');
-  const stop1 = document.createElementNS(SVG_NS, 'stop');
-  stop1.setAttribute('offset', '0%');
-  stop1.setAttribute('stop-color', colorA);
-  const stop2 = document.createElementNS(SVG_NS, 'stop');
-  stop2.setAttribute('offset', '100%');
-  stop2.setAttribute('stop-color', colorB);
-  gradient.append(stop1, stop2);
-  defs.appendChild(gradient);
 }
 
 function appendFunnelRibbonLabel(svg, x, y, count) {
@@ -677,9 +664,6 @@ function renderApplicationsFunnel() {
   svg.setAttribute('aria-label', 'Application pipeline flow by status');
   svg.classList.add('funnel-svg');
 
-  const defs = document.createElementNS(SVG_NS, 'defs');
-  svg.appendChild(defs);
-
   // Applied's bar shows the FULL total (everyone who ever applied), not
   // just cumulative[0], so the Rejected branch has a visible slice of it
   // to split off from. Every later stage shows cumulative[i] as before.
@@ -699,12 +683,9 @@ function renderApplicationsFunnel() {
     const x1 = xFor(i) + FUNNEL_NODE_WIDTH;
     const x2 = xFor(i + 1);
 
-    const gradId = `funnel-grad-${i}`;
-    appendRibbonGradient(defs, gradId, x1, x2, FUNNEL_SHADES[i], FUNNEL_SHADES[i + 1]);
-
     const path = document.createElementNS(SVG_NS, 'path');
     path.setAttribute('d', sankeyRibbonPath(x1, topY, x2, topY, width1, width2));
-    path.setAttribute('fill', `url(#${gradId})`);
+    path.setAttribute('fill', FUNNEL_RIBBON_COLOR);
     path.classList.add('funnel-ribbon');
     svg.appendChild(path);
 
@@ -719,11 +700,9 @@ function renderApplicationsFunnel() {
     const branchY1 = topY + nodeHeights[0] - rejectedHeight;
     const branchX2 = xFor(1);
 
-    appendRibbonGradient(defs, 'funnel-grad-rejected', branchX1, branchX2, FUNNEL_SHADES[0], REJECTED_COLOR);
-
     const path = document.createElementNS(SVG_NS, 'path');
     path.setAttribute('d', sankeyRibbonPath(branchX1, branchY1, branchX2, branchY, rejectedHeight, rejectedHeight));
-    path.setAttribute('fill', 'url(#funnel-grad-rejected)');
+    path.setAttribute('fill', REJECTED_COLOR);
     path.classList.add('funnel-ribbon', 'funnel-ribbon-rejected');
     svg.appendChild(path);
 
@@ -737,7 +716,7 @@ function renderApplicationsFunnel() {
 
   FUNNEL_STAGES.forEach((stage, i) => {
     appendFunnelNode(
-      svg, stage, exactCounts[stage], xFor(i), topY, nodeHeights[i], FUNNEL_SHADES[i],
+      svg, stage, exactCounts[stage], xFor(i), topY, nodeHeights[i], FUNNEL_NODE_COLOR,
       `${stage}: ${exactCounts[stage]} currently here (${i === 0 ? total : cumulative[i]} reached this stage or later)`,
     );
   });
