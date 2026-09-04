@@ -803,11 +803,26 @@ input[type="file"]::-webkit-file-upload-button {
   transform: none;
 }
 
-.applications-funnel {
+/* Visible viewport onto the chart - the chart itself (.applications-funnel)
+   is sized to its actual content in app.js and can be wider/taller than
+   this, so it no longer gets silently clipped. cursor/user-select here
+   support the click-and-drag panning wired up in app.js. */
+.applications-funnel-scroll {
   width: 100%;
   max-width: 950px;
-  height: 320px;
+  height: 340px;
   margin: 0 auto 0.75rem;
+  overflow: auto;
+  cursor: grab;
+  user-select: none;
+}
+
+.applications-funnel-scroll.dragging {
+  cursor: grabbing;
+}
+
+.applications-funnel {
+  height: 100%;
 }
 
 /* Plain-button fallback for keyboard users, since the chart itself renders

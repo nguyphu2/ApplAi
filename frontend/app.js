@@ -14,6 +14,7 @@ const profileLoggedOut = document.getElementById('profile-logged-out');
 const profileLoggedIn = document.getElementById('profile-logged-in');
 const applicationsLoggedOut = document.getElementById('applications-logged-out');
 const applicationsLoggedIn = document.getElementById('applications-logged-in');
+const applicationsFunnelScrollEl = document.getElementById('applications-funnel-scroll');
 const applicationsFunnelEl = document.getElementById('applications-funnel');
 const applicationsFunnelFiltersEl = document.getElementById('applications-funnel-filters');
 const applicationsSearchInput = document.getElementById('applications-search');
@@ -677,14 +678,72 @@ function renderApplicationsFunnel() {
   };
 
   if (!funnelChart) {
+    // Sized to its actual content (not squeezed into the visible viewport)
+    // so nothing gets silently clipped - .applications-funnel-scroll is the
+    // fixed-size window onto it, scrollable/drag-pannable below.
+    applicationsFunnelEl.style.width = `${Math.max(950, FUNNEL_STAGES.length * 170)}px`;
+    applicationsFunnelEl.style.height = '380px';
+
     funnelChart = echarts.init(applicationsFunnelEl, null, { renderer: 'svg' });
     funnelChart.on('click', (params) => {
       if (params.dataType !== 'node' || params.name.endsWith(FUNNEL_PAD_SUFFIX)) return;
       toggleApplicationsStatusFilter(params.name);
     });
     window.addEventListener('resize', () => funnelChart.resize());
+    setUpFunnelDragToPan();
   }
   funnelChart.setOption(option, { notMerge: true });
+}
+
+// Click-and-drag panning over the chart's scroll viewport - plain
+// overflow:auto only scrolls via scrollbar/wheel/trackpad, and the chart
+// can be wider than the viewport (see the width set above), so this adds
+// grab-and-drag the way a map does. Runs once, guarded by the same
+// !funnelChart check that guards the rest of one-time chart setup.
+function setUpFunnelDragToPan() {
+  const DRAG_THRESHOLD = 4;
+  let dragging = false;
+  let dragMoved = false;
+  let startX, startY, startScrollLeft, startScrollTop;
+
+  applicationsFunnelScrollEl.addEventListener('mousedown', (event) => {
+    dragging = true;
+    dragMoved = false;
+    startX = event.clientX;
+    startY = event.clientY;
+    startScrollLeft = applicationsFunnelScrollEl.scrollLeft;
+    startScrollTop = applicationsFunnelScrollEl.scrollTop;
+  });
+
+  window.addEventListener('mousemove', (event) => {
+    if (!dragging) return;
+    const dx = event.clientX - startX;
+    const dy = event.clientY - startY;
+    if (!dragMoved && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+      dragMoved = true;
+      applicationsFunnelScrollEl.classList.add('dragging');
+    }
+    if (dragMoved) {
+      applicationsFunnelScrollEl.scrollLeft = startScrollLeft - dx;
+      applicationsFunnelScrollEl.scrollTop = startScrollTop - dy;
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    dragging = false;
+    applicationsFunnelScrollEl.classList.remove('dragging');
+  });
+
+  // A drag that ends on a chart node would otherwise still fire echarts'
+  // click handler (toggling that stage's filter) since mousedown/mouseup on
+  // the same element still produces a native "click" - capture phase so
+  // this runs, and can stop the event, before echarts' own listener sees it.
+  applicationsFunnelEl.addEventListener('click', (event) => {
+    if (dragMoved) {
+      event.stopPropagation();
+      dragMoved = false;
+    }
+  }, true);
 }
 
 const APPLICATIONS_PAGE_SIZE = 10;
